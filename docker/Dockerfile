@@ -14,6 +14,7 @@ WORKDIR /app
 
 COPY --from=builder /app/node_modules ./node_modules
 COPY package.json package-lock.json ./
+COPY client/package.json ./client/package.json
 COPY server ./server
 COPY docker/docker-entrypoint.sh ./docker-entrypoint.sh
 
