@@ -678,13 +678,11 @@
         letter-spacing: -.05em;
         font-variant-numeric: tabular-nums;
 
+        // Colon is static on the big digital clock: no per-second fade/blink.
+        // (The .dim class the tick still toggles is intentionally ignored here;
+        // it only drives the mini clock overlay.)
         .colon {
             display: inline-block;
-            transition: opacity .3s;
-        }
-
-        .colon.dim {
-            opacity: .25;
         }
     }
 
@@ -1030,6 +1028,28 @@
     &.size-s { font-size: 2.2vw; }
     &.size-m { font-size: 3.4vw; }
     &.size-l { font-size: 5vw; }
+}
+
+/* Auto-hiding controls while the clock covers the screen.
+ * The top-right toolbar (TV/fullscreen + settings) floats above the clock and
+ * fades in on mouse/touch movement (body.controls-active, set from JS). */
+body.wnp-clock-on {
+    .wnpFooter .btn-group.secondary {
+        position: fixed;
+        top: 2.5vh;
+        right: 2.5vh;
+        z-index: 1045; // above #wnpClock (1040), below the settings modal (1055)
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity .4s ease;
+        background: rgba(0, 0, 0, .35);
+        border-radius: 10px;
+    }
+
+    &.controls-active .wnpFooter .btn-group.secondary {
+        opacity: 1;
+        pointer-events: auto;
+    }
 }
 
 /* Idle blanking: everything black, clock included */

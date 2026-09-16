@@ -16,7 +16,7 @@ WNP.s = {
     aServerUI: ["btnReboot", "btnUpdate", "btnShutdown", "btnReloadUI", "sServerUrlHostname", "sServerUrlIP", "sServerVersion", "sClientVersion", "chkLyricsEnabled", "lyricsCacheSize", "btnClearLyricsCache", "lyricsOffsetMs",
         "wnpClock", "clockTime", "clockDate", "clockNote", "clockWeather", "clockDial", "dialTicks", "dialNumbers", "dialBrand", "dialSub", "handHour", "handMinute", "handSecond", "clockSeg", "wnpMiniClock",
         "chkClockEnabled", "chkClockOnInput", "chkClockDrift", "clockAfterSeconds", "clockBlankAfterMinutes",
-        "selClockTheme", "selClockNightTheme", "chkClockAutoDayNight", "clockDialBrand", "clockDialSub",
+        "selClockTheme", "selClockNightTheme", "chkClockAutoDayNight", "clockDialBrand", "clockDialSub", "segSkew", "segSkewValue",
         "chkClockOverride", "selClockFont", "selClockColors", "btnApplyPreset", "btnResetColors", "colorRoles", "chkClockGradient", "clockBaseColor", "selClockScheme", "btnApplyScheme", "clockNightDim", "clockNightDimValue", "chkOverlayEnabled", "selOverlayPosition", "selOverlaySize",
         "chkWeatherTemp", "chkWeatherForecast", "weatherLocation", "selWeatherUnits", "weatherStatus",
         "selClockLocale", "chkSwipeEnabled", "selSwipeGesture", "selSwipeTransition", "swipeReturnSeconds",
@@ -40,7 +40,8 @@ WNP.d = {
     lyricsIndex: null, // Current lyrics line index
     alertTimeout: null, // Alert timeout, used for storing the timeout for the alerts
     lastState: null, // Last state message, used by the clock logic
-    lastPlayingMs: Date.now(), // Last time something was playing (or an input was active), used by the clock logic
+    lastPlayingMs: 0, // Last time real playback occurred (0 = nothing yet, so the clock shows immediately at boot)
+    lastActivityMs: Date.now(), // Last time there was any playback activity (drives idle blanking; starts "now" so boot never blanks)
     clockVisible: false, // Whether the clock overlay is currently shown
     clockTimer: null, // Clock tick interval
     driftTimer: null, // Clock drift interval
@@ -220,13 +221,21 @@ WNP.setUIListeners = function () {
     // Clock + weather settings: any change re-sends the whole block
     this.fillClockSelects();
     var clockInputs = ["chkClockEnabled", "chkClockOnInput", "chkClockDrift", "clockAfterSeconds", "clockBlankAfterMinutes",
-        "selClockTheme", "selClockNightTheme", "chkClockAutoDayNight", "clockDialBrand", "clockDialSub",
+        "selClockTheme", "selClockNightTheme", "chkClockAutoDayNight", "clockDialBrand", "clockDialSub", "segSkew", "segSkewValue",
         "chkClockOverride", "selClockFont", "selClockColors", "btnApplyPreset", "btnResetColors", "colorRoles", "chkClockGradient", "clockBaseColor", "selClockScheme", "btnApplyScheme", "clockNightDim", "clockNightDimValue", "chkOverlayEnabled", "selOverlayPosition", "selOverlaySize",
         "selClockLocale", "chkSwipeEnabled", "selSwipeGesture", "selSwipeTransition", "swipeReturnSeconds"];
     clockInputs.forEach(function (id) {
         if (!WNP.r[id]) { return; }
         WNP.r[id].addEventListener("change", function () { WNP.emitClockSettings(); });
     });
+    // Re-sync the whole settings form from the server each time the modal opens.
+    // Init requests server-settings only once (after a short delay), so opening
+    // Settings right after a refresh could otherwise show stale HTML defaults
+    // (e.g. the clock switch looking off when it is actually on). (fork)
+    var settingsModal = document.getElementById("settingsModal");
+    if (settingsModal) {
+        settingsModal.addEventListener("show.bs.modal", function () { socket.emit("server-settings"); });
+    }
     // Night shift settings
     if (this.r.chkNightShift) {
         var nsEmit = function () {
@@ -410,6 +419,10 @@ WNP.setSocketDefinitions = function () {
             WNP.r.chkClockAutoDayNight.checked = Boolean(clk.autoDayNight);
             WNP.r.clockDialBrand.value = (clk.dialText && clk.dialText.brand) || "";
             WNP.r.clockDialSub.value = (clk.dialText && clk.dialText.sub) || "";
+            if (WNP.r.segSkew) {
+                WNP.r.segSkew.value = (typeof clk.segmentSkew === "number") ? clk.segmentSkew : -8;
+                WNP.r.segSkewValue.innerText = WNP.r.segSkew.value;
+            }
             WNP.r.chkClockOverride.checked = Boolean(clk.override && clk.override.enabled);
             WNP.r.selClockFont.value = (clk.override && clk.override.font) || "";
             var col = clk.colors || {};
@@ -1410,6 +1423,17 @@ WNP.fillClockSelects = function () {
     this.r.chkClockGradient.addEventListener("change", function () { self.emitClockSettings(); });
     this.r.clockNightDim.addEventListener("input", function () { self.r.clockNightDimValue.innerText = this.value; });
     this.r.clockNightDim.addEventListener("change", function () { self.emitClockSettings(); });
+    if (this.r.segSkew) {
+        // Live slant preview: update the label, keep the in-memory setting in sync so the
+        // next segment render uses it, and tilt the current display immediately.
+        this.r.segSkew.addEventListener("input", function () {
+            self.r.segSkewValue.innerText = this.value;
+            if (self.d.serverSettings && self.d.serverSettings.features && self.d.serverSettings.features.clock) {
+                self.d.serverSettings.features.clock.segmentSkew = parseInt(this.value, 10);
+            }
+            if (self.r.clockSeg) { self.r.clockSeg.style.transform = "skewX(" + parseInt(this.value, 10) + "deg)"; }
+        });
+    }
 };
 
 /** Set one role's custom colour (null = back to theme default) and save. */
@@ -1447,6 +1471,7 @@ WNP.emitClockSettings = function () {
                 theme: this.r.selClockTheme.value,
                 nightTheme: this.r.selClockNightTheme.value,
                 autoDayNight: this.r.chkClockAutoDayNight.checked,
+                segmentSkew: this.r.segSkew ? parseInt(this.r.segSkew.value, 10) : -8,
                 dialText: { brand: this.r.clockDialBrand.value.trim(), sub: this.r.clockDialSub.value.trim() },
                 override: { enabled: this.r.chkClockOverride.checked, font: this.r.selClockFont.value },
                 colors: {
@@ -1531,16 +1556,21 @@ WNP.applyClockTheme = function () {
     el.style.setProperty("--clock-inset", colors.inset || colors.face || colors.bg);
     el.classList.toggle("gradient", Boolean(colCfg.gradient));
 
-    // Dial text
+    // Dial text (elements are guarded: the HTML minifier can drop empty SVG
+    // nodes, and /tv omits them — a missing ref must never abort the tick)
     var brand = (cfg.dialText && cfg.dialText.brand) || "";
     var sub = (cfg.dialText && cfg.dialText.sub) || "";
-    this.r.dialBrand.textContent = theme.dial ? brand : "";
-    this.r.dialSub.textContent = theme.dial ? sub : "";
-    this.r.dialBrand.setAttribute("y", theme.brandY || 62);
-    this.r.dialSub.setAttribute("y", theme.subY || 140);
+    if (this.r.dialBrand) {
+        this.r.dialBrand.textContent = theme.dial ? brand : "";
+        this.r.dialBrand.setAttribute("y", theme.brandY || 62);
+    }
+    if (this.r.dialSub) {
+        this.r.dialSub.textContent = theme.dial ? sub : "";
+        this.r.dialSub.setAttribute("y", theme.subY || 140);
+    }
 
     // Analog dial: ticks and numerals
-    if (theme.kind === "analog") {
+    if (theme.kind === "analog" && this.r.dialTicks && this.r.dialNumbers) {
         var ticks = "", nums = "";
         for (var i = 0; i < 60; i++) {
             var major = i % 5 === 0;
@@ -1652,7 +1682,9 @@ WNP.renderSegments = function (main, theme, tag, aux) {
         }
     }
     svg.setAttribute("viewBox", "-20 -12 " + (Math.max(500, x) + 40) + " 204");
-    svg.style.transform = theme.skew ? ("skewX(" + theme.skew + "deg)") : "";
+    var cfgSkew = this.clockCfg().segmentSkew; // user-selectable slant overrides the theme default
+    var skew = (typeof cfgSkew === "number") ? cfgSkew : theme.skew;
+    svg.style.transform = skew ? ("skewX(" + skew + "deg)") : "";
     svg.innerHTML = out;
 };
 
@@ -1718,6 +1750,28 @@ WNP.startClock = function () {
     var self = this;
     var inputs = ["HDMI", "OPTICAL", "LINE-IN", "BLUETOOTH", "SPDIF"];
 
+    // The production HTML minifier strips empty inline-SVG nodes, so the analog
+    // dial's dialTicks/dialNumbers/dialBrand/dialSub can be missing at runtime.
+    // Recreate any that are absent so analog themes work regardless of the build. (fork)
+    var dial = document.getElementById("clockDial");
+    if (dial) {
+        var SVGNS = "http://www.w3.org/2000/svg";
+        [["dialTicks", "g", {}],
+         ["dialNumbers", "g", {}],
+         ["dialBrand", "text", { class: "dialBrand", x: "100", y: "62", "text-anchor": "middle" }],
+         ["dialSub", "text", { class: "dialSub", x: "100", y: "140", "text-anchor": "middle" }]
+        ].forEach(function (spec) {
+            var el = document.getElementById(spec[0]);
+            if (!el) {
+                el = document.createElementNS(SVGNS, spec[1]);
+                el.setAttribute("id", spec[0]);
+                Object.keys(spec[2]).forEach(function (k) { el.setAttribute(k, spec[2][k]); });
+                dial.appendChild(el);
+            }
+            self.r[spec[0]] = el;
+        });
+    }
+
     var tick = function () {
         var cfg = self.clockCfg();
         var enabled = cfg.enabled !== false;
@@ -1731,14 +1785,21 @@ WNP.startClock = function () {
         var playing = transport === "PLAYING" || transport === "TRANSITIONING" || transport === "PAUSED_PLAYBACK";
         var now = Date.now();
 
-        if (playing && !(onInput && cfg.onInput)) { self.d.lastPlayingMs = now; }
-        var lastActivityMs = (playing && onInput) ? now : self.d.lastPlayingMs;
+        // "Active playback" = something playing that should occupy the now-playing
+        // screen. Playback over a TV/line input still counts as active unless the
+        // user chose to show the clock over inputs.
+        var activePlayback = playing && !(onInput && cfg.onInput);
+        if (playing) { self.d.lastActivityMs = now; } // any playback resets the idle-blank timer
+        if (activePlayback) { self.d.lastPlayingMs = now; } // ...only real playback resets the idle-clock timer
 
-        var idleClock = enabled && (now - self.d.lastPlayingMs) >= afterMs;
+        // Show the clock when nothing is actively playing (immediately at boot, since
+        // lastPlayingMs starts at 0) once it's been idle for afterSeconds. Never cover
+        // an actively-playing track, even when afterSeconds is 0. (fork)
+        var idleClock = enabled && !activePlayback && (now - self.d.lastPlayingMs) >= afterMs;
         if (self.d.manualClock && self.d.manualClockUntil && now >= self.d.manualClockUntil) { self.d.manualClock = false; }
         if (idleClock) { self.d.manualClock = false; } // idle takes over; swipe state resets
         var showClock = idleClock || self.d.manualClock;
-        var blank = blankMs > 0 && (now - lastActivityMs) >= blankMs;
+        var blank = blankMs > 0 && (now - self.d.lastActivityMs) >= blankMs;
         var trans = (cfg.swipe && cfg.swipe.transition) || "fade";
         if (self.r.wnpClock.getAttribute("data-transition") !== trans) { self.r.wnpClock.setAttribute("data-transition", trans); }
 
@@ -1802,6 +1863,18 @@ WNP.startClock = function () {
         var x = Math.round((Math.random() - 0.5) * 40), y = Math.round((Math.random() - 0.5) * 40);
         self.r.wnpClock.style.setProperty("--drift", "translate(" + x + "px, " + y + "px)");
     }, 60000);
+
+    // Auto-hiding controls: while the clock covers the screen the toolbar is hidden,
+    // and any mouse/touch movement fades it back in for a few seconds so the
+    // fullscreen/settings icons stay reachable. (fork)
+    var controlsTimer = null;
+    var wakeControls = function () {
+        document.body.classList.add("controls-active");
+        if (controlsTimer) { clearTimeout(controlsTimer); }
+        controlsTimer = setTimeout(function () { document.body.classList.remove("controls-active"); }, 3000);
+    };
+    document.addEventListener("pointermove", wakeControls, { passive: true });
+    document.addEventListener("pointerdown", wakeControls, { passive: true });
 
     // Swipe to reveal / hide the clock while playing (touch or mouse drag)
     var swipeCfg = function () { return self.clockCfg().swipe || {}; };

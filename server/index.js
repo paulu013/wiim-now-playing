@@ -85,6 +85,7 @@ let serverSettings = { // Placeholder for current server settings
             "blankAfterMinutes": 0, // Blank the whole screen after this many idle minutes (0 = never)
             "theme": "digital-minimal", // Day theme id, see client WNP.clockThemes
             "nightTheme": "digital-minimal", // Theme used between sunset and sunrise when autoDayNight is on
+            "segmentSkew": -8, // Italic tilt (deg) of the seven-segment digits; overrides the theme's default skew
             "autoDayNight": false, // Switch themes on sunrise/sunset (needs weather location)
             "override": { "enabled": false, "font": "" }, // Overrule theme font
             "colors": { "custom": {}, "gradient": false, "nightDim": 100, "base": "#ede8df", "scheme": "mono" }, // Per-role colour overrides (see WNP.colorRoles), gradient bg, night dimming %
