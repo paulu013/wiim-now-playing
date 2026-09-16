@@ -22,7 +22,7 @@ WNP.s = {
         "selClockLocale", "chkSwipeEnabled", "selSwipeGesture", "selSwipeTransition", "swipeReturnSeconds",
         "wnpNightShift", "chkNightShift", "selNightShiftSchedule", "nightShiftFrom", "nightShiftTo", "nightShiftWarmth", "nightShiftWarmthValue", "nightShiftBrightness", "nightShiftBrightnessValue",
         "chkExternalEnabled", "selExternalPriority", "selExternalArtwork", "plexUrl", "plexToken", "plexPlayers", "plexUsers", "jellyfinUrl", "jellyfinApiKey", "jellyfinPlayers", "jellyfinUsers", "btnSaveSources",
-        "wnpHero", "wnpHeroImg", "wnpHeroLogo"],
+        "wnpHero", "wnpHeroImg", "wnpHeroImgB", "wnpHeroLogo"],
     // Default timeout for alerts in ms
     alertTimeoutMs: 5000
 };
@@ -57,7 +57,8 @@ WNP.d = {
     settingsOpen: false, // Whether the settings modal is open (guards manual-save fields from being clobbered by broadcasts)
     progAnchor: null, // Last known playback position anchor for smooth local progress interpolation
     progressTimer: null, // Local progress ticker interval
-    populateSourcesOnce: false // One-shot: repopulate the Sources form on the next server-settings (set on modal open)
+    populateSourcesOnce: false, // One-shot: repopulate the Sources form on the next server-settings (set on modal open)
+    heroActiveLayer: "a" // Which hero image layer is currently shown (for crossfading backdrop art)
 };
 
 // Reference placeholders.
@@ -782,6 +783,9 @@ WNP.setSocketDefinitions = function () {
             WNP.d.prevTrackInfo = currentTrackInfo; // Remember the last track info
             console.log("WNP", "Track changed:", currentTrackInfo);
             WNP.clearLyrics();
+            // Fade/slide the now-playing info and album art in on each new track. (fork)
+            WNP.playEnter(document.querySelector(".wnpMediaInfo"));
+            WNP.playEnter(document.querySelector(".wnpAlbumArt"));
         }
         if (trackChanged && currentAlbumArt != albumArtUri) {
             WNP.setAlbumArt(albumArtUri);
@@ -791,14 +795,22 @@ WNP.setSocketDefinitions = function () {
         // optional clear logo (Plex/Jellyfin video, Settings > Sources > Artwork). (fork)
         var artMode = (msg.trackMetaData && msg.trackMetaData["wnp:artwork"]) || "";
         var heroLogo = (msg.trackMetaData && msg.trackMetaData["wnp:logo"]) || "";
+        // Per-artwork layout hooks (external only): poster/backdrop get a large left-aligned
+        // title, hide the device line, and move the source logo to the bottom-right. (fork)
+        var extArtMode = msg.external ? artMode : "";
+        ["backdrop", "poster", "still"].forEach(function (m) {
+            document.body.classList.toggle("wnp-art-" + m, extArtMode === m);
+        });
         var heroOn = artMode === "backdrop" && Boolean(albumArtUri) && WNP.r.wnpHero;
         document.body.classList.toggle("wnp-hero", Boolean(heroOn));
         // Only (re)set the backdrop/logo on a track change or when empty — the https
         // art URL carries a changing cache-buster, so setting it every tick would flicker.
-        if (heroOn && (trackChanged || !WNP.r.wnpHeroImg.getAttribute("src"))) {
-            WNP.r.wnpHeroImg.src = albumArtUri;
+        var heroHasImg = WNP.r.wnpHeroImg.getAttribute("src") || (WNP.r.wnpHeroImgB && WNP.r.wnpHeroImgB.getAttribute("src"));
+        if (heroOn && (trackChanged || !heroHasImg)) {
+            WNP.setHeroImage(albumArtUri); // crossfade to the new backdrop
             if (heroLogo) { WNP.r.wnpHeroLogo.src = heroLogo; WNP.r.wnpHeroLogo.classList.remove("d-none"); }
             else { WNP.r.wnpHeroLogo.removeAttribute("src"); WNP.r.wnpHeroLogo.classList.add("d-none"); }
+            if (trackChanged) { WNP.playEnter(WNP.r.wnpHeroLogo); }
         }
 
         // Device volume
@@ -1085,6 +1097,30 @@ WNP.renderProgress = function () {
     this.r.progressLeft.children[0].innerText = left;
     this.r.progressPercent.setAttribute("aria-valuenow", percent);
     this.r.progressPercent.children[0].setAttribute("style", "width:" + percent + "%");
+};
+
+/** Crossfade the backdrop-hero art to a new image (two stacked layers). (fork) */
+WNP.setHeroImage = function (url) {
+    var a = this.r.wnpHeroImg, b = this.r.wnpHeroImgB;
+    if (!a || !b) { if (a) { a.src = url; } return; }
+    var active = this.d.heroActiveLayer === "b" ? b : a;
+    var incoming = (active === a) ? b : a;
+    var self = this;
+    if (incoming.getAttribute("src") === url) { return; } // already showing this art
+    incoming.onload = function () {
+        incoming.classList.add("show");
+        active.classList.remove("show");
+        self.d.heroActiveLayer = (incoming === a) ? "a" : "b";
+    };
+    incoming.src = url;
+};
+
+/** Restart the fade/slide-in "enter" animation on an element (used on track change). (fork) */
+WNP.playEnter = function (el) {
+    if (!el) { return; }
+    el.classList.remove("wnp-enter");
+    void el.offsetWidth; // force reflow so the animation restarts
+    el.classList.add("wnp-enter");
 };
 
 /** Tick the progress bar locally so it moves smoothly between polls. */
