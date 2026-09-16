@@ -1040,41 +1040,46 @@
         text-shadow: 0 0 8px rgba(220, 239, 255, .55);
     }
 
-    // Bedside VFD variant: seven-segment weather readout anchored to the time's top-right,
-    // icon + temperature + description all in the same colour and font as the time. (fork)
+    // Bedside VFD variant: seven-segment weather readout beside the time (to its right,
+    // top-aligned), with icon + temperature + description in the same colour and font as
+    // the time. The time+weather pair is laid out as a centred row so it stays centred on
+    // screen whether or not the weather block is present. (fork)
     &[data-theme="segment-bedside-wx"] {
         #clockSeg {
             text-shadow: 0 0 8px rgba(220, 239, 255, .55); // same glow as bedside
         }
 
-        // The inner shrink-wraps the time (widest child), so its right edge = the time's
-        // right edge — anchor the weather block there, just above the digits.
+        // Row layout: time and weather side by side, the pair centred; align-items:flex-start
+        // pins the weather's top to the top of the time.
         .wnpClockInner {
-            position: relative;
+            flex-direction: row;
+            align-items: flex-start;
+            justify-content: center;
+            gap: 2vw;
         }
 
         #clockWeather.clockWeather {
-            position: absolute;
-            top: 0;
-            right: 0;
-            transform: translateY(-108%); // sit just above the top-right corner of the time
             margin: 0;
             color: var(--clock-fg);
             text-shadow: 0 0 8px rgba(220, 239, 255, .45);
 
+            // Plain block flow (not flex): icon + temperature share the first line, the
+            // description drops to the next. This keeps the block's width equal to its visible
+            // text (no flex phantom width), so the time+weather pair centres accurately.
             .wxNow {
-                flex-wrap: wrap;
-                justify-content: flex-end;
-                align-items: baseline;
-                gap: .4vw 1vw;
+                display: block;
 
                 .bi {
+                    display: inline-block;
+                    vertical-align: baseline;
+                    margin-right: 1vw;
                     color: var(--clock-fg); // icon matches the time colour
                     font-size: 5vw;
                 }
 
                 .wxTemp {
                     // Seven-segment temperature, a bit smaller than the time.
+                    display: inline-block;
                     font-family: "DSEG7 Classic", monospace;
                     font-weight: 700;
                     font-size: 6.5vw;
@@ -1082,9 +1087,8 @@
                 }
 
                 .wxLabel {
-                    // Seven-segment description on its own line, right-aligned under the temp.
-                    flex-basis: 100%;
-                    text-align: right;
+                    // Seven-segment description on its own line under the temperature.
+                    display: block;
                     font-family: "DSEG7 Classic", monospace;
                     font-weight: 700;
                     font-size: 3.2vw;
