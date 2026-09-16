@@ -1168,6 +1168,20 @@ body.wnp-external {
         background: linear-gradient(0deg, rgba(0, 0, 0, .92) 0%, rgba(0, 0, 0, .55) 30%, rgba(0, 0, 0, .15) 65%, rgba(0, 0, 0, .45) 100%);
     }
 
+    // Flat contrast scrim (clock-on-backdrop): darkens the whole backdrop just enough for the
+    // clock to reach ~3:1. Opacity is set from JS (WNP.applyHeroContrast); 0 = no darkening.
+    // z-index lifts it above the image layers (which are z:auto). (fork)
+    &::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        background: #000;
+        opacity: var(--hero-scrim, 0);
+        transition: opacity .5s ease;
+        pointer-events: none;
+    }
+
     #wnpHeroLogo {
         position: absolute;
         left: 5vw;

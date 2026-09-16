@@ -1135,8 +1135,62 @@ WNP.setHeroImage = function (url) {
         incoming.classList.add("show");
         active.classList.remove("show");
         self.d.heroActiveLayer = (incoming === a) ? "a" : "b";
+        self.applyHeroContrast(incoming); // keep the clock legible over this backdrop (fork)
     };
     incoming.src = url;
+};
+
+/** WCAG relative luminance for an sRGB colour (0-255 channels). */
+WNP.relLuminance = function (r, g, b) {
+    var f = function (c) { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+};
+
+/**
+ * Clock-on-backdrop legibility: sample the backdrop's average colour and, if its contrast with
+ * the clock colour is below WCAG 3:1, darken the backdrop (a flat black scrim, --hero-scrim)
+ * just enough to reach 3:1. Runs when a backdrop image finishes loading. The hero art is served
+ * same-origin via /proxy-art, so the canvas read isn't tainted; any failure just skips. (fork)
+ */
+WNP.applyHeroContrast = function (img) {
+    var hero = this.r.wnpHero;
+    if (!hero) { return; }
+    // Only the "clock on backdrop" layout needs this; other modes clear any scrim.
+    if (!document.body.classList.contains("wnp-art-clock") || !this.r.clockTime) {
+        hero.style.removeProperty("--hero-scrim");
+        return;
+    }
+    try {
+        var w = 32, h = 32;
+        var cv = this.d.heroCanvas || (this.d.heroCanvas = document.createElement("canvas"));
+        cv.width = w; cv.height = h;
+        var ctx = cv.getContext("2d", { willReadFrequently: true });
+        ctx.drawImage(img, 0, 0, w, h);
+        var data = ctx.getImageData(0, 0, w, h).data;
+        var r = 0, g = 0, b = 0, n = 0;
+        for (var i = 0; i < data.length; i += 4) { r += data[i]; g += data[i + 1]; b += data[i + 2]; n++; }
+        r /= n; g /= n; b /= n;
+        var Lbg = this.relLuminance(r, g, b);
+        // Clock foreground colour as actually rendered (theme fg / lit-segment colour).
+        var m = (getComputedStyle(this.r.clockTime).color.match(/[\d.]+/g) || [255, 255, 255]).map(Number);
+        var Lfg = this.relLuminance(m[0], m[1], m[2]);
+        var contrastAt = function (alpha) {
+            var L = WNP.relLuminance(r * (1 - alpha), g * (1 - alpha), b * (1 - alpha));
+            var hi = Math.max(Lfg, L), lo = Math.min(Lfg, L);
+            return (hi + 0.05) / (lo + 0.05);
+        };
+        var alpha = 0;
+        if (contrastAt(0) < 3) {
+            if (Lfg > Lbg) { // darkening the backdrop only helps when the clock is the lighter one
+                for (var a = 0.05; a <= 0.9; a += 0.05) { alpha = a; if (contrastAt(a) >= 3) { break; } }
+            } else {
+                alpha = 0.9; // clock darker than backdrop (rare for these themes): darken as far as we can
+            }
+        }
+        hero.style.setProperty("--hero-scrim", alpha.toFixed(2));
+    } catch (e) {
+        hero.style.removeProperty("--hero-scrim"); // tainted canvas / no context: skip
+    }
 };
 
 /** Restart the fade/slide-in "enter" animation on an element (used on track change). (fork) */
