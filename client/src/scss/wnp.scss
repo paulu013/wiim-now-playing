@@ -1040,6 +1040,62 @@
         text-shadow: 0 0 8px rgba(220, 239, 255, .55);
     }
 
+    // Bedside VFD variant: seven-segment weather readout anchored to the time's top-right,
+    // icon + temperature + description all in the same colour and font as the time. (fork)
+    &[data-theme="segment-bedside-wx"] {
+        #clockSeg {
+            text-shadow: 0 0 8px rgba(220, 239, 255, .55); // same glow as bedside
+        }
+
+        // The inner shrink-wraps the time (widest child), so its right edge = the time's
+        // right edge — anchor the weather block there, just above the digits.
+        .wnpClockInner {
+            position: relative;
+        }
+
+        #clockWeather.clockWeather {
+            position: absolute;
+            top: 0;
+            right: 0;
+            transform: translateY(-108%); // sit just above the top-right corner of the time
+            margin: 0;
+            color: var(--clock-fg);
+            text-shadow: 0 0 8px rgba(220, 239, 255, .45);
+
+            .wxNow {
+                flex-wrap: wrap;
+                justify-content: flex-end;
+                align-items: baseline;
+                gap: .4vw 1vw;
+
+                .bi {
+                    color: var(--clock-fg); // icon matches the time colour
+                    font-size: 5vw;
+                }
+
+                .wxTemp {
+                    // Seven-segment temperature, a bit smaller than the time.
+                    font-family: "DSEG7 Classic", monospace;
+                    font-weight: 700;
+                    font-size: 6.5vw;
+                    color: var(--clock-fg);
+                }
+
+                .wxLabel {
+                    // Seven-segment description on its own line, right-aligned under the temp.
+                    flex-basis: 100%;
+                    text-align: right;
+                    font-family: "DSEG7 Classic", monospace;
+                    font-weight: 700;
+                    font-size: 3.2vw;
+                    letter-spacing: .04em;
+                    text-transform: uppercase; // DSEG7 renders upper-case letters most legibly
+                    color: var(--clock-fg);
+                }
+            }
+        }
+    }
+
     &[data-theme="analog-night"] #clockDial {
         .tickMajor,
         .dialNumber {

@@ -1507,6 +1507,7 @@ WNP.clockThemes = {
     "analog-night": { name: "Analog – night dial", kind: "analog", font: "Manrope", colors: "lume", dial: true, numerals: "quarters" },
     "analog-alarm": { name: "Analog – white alarm clock", kind: "analog", font: "DM Sans", colors: "alarm", dial: true, numerals: "arabic", brandY: 58, subY: 68 },
     "segment-bedside": { name: "Seven-segment – bedside", kind: "segment", font: "", colors: "vfd", dial: false, ghost: 0.08 },
+    "segment-bedside-wx": { name: "Seven-segment – bedside (weather)", kind: "segment", font: "", colors: "vfd", dial: false, ghost: 0.08 },
     "segment-alarm": { name: "Seven-segment – alarm clock", kind: "segment", font: "", colors: "lcd", dial: false, ghost: 0.12, ampm: true }
 };
 
