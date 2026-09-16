@@ -26,13 +26,44 @@
         </div>
 
         <!-- Clock: shown when nothing is playing (see Settings > Display) -->
-        <div id="wnpClock" class="d-none" aria-live="off">
+        <div id="wnpClock" class="d-none" data-theme="digital-minimal" aria-live="off">
             <div class="wnpClockInner">
-                <div id="clockTime">--:--</div>
-                <div id="clockDate"></div>
+                <div class="clockDigital">
+                    <div id="clockTime">--:--</div>
+                    <div id="clockDate"></div>
+                </div>
+                <div class="clockAnalog">
+                    <svg id="clockDial" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+                        <circle class="dialFace" cx="100" cy="100" r="96" />
+                        <g id="dialTicks"></g>
+                        <g id="dialNumbers"></g>
+                        <text id="dialBrand" class="dialBrand" x="100" y="62" text-anchor="middle"></text>
+                        <text id="dialSub" class="dialSub" x="100" y="140" text-anchor="middle"></text>
+                        <g id="handHour" class="handHour">
+                            <line class="hand" x1="100" y1="106" x2="100" y2="48" />
+                            <line class="handInset" x1="100" y1="58" x2="100" y2="70" />
+                        </g>
+                        <g id="handMinute" class="handMinute">
+                            <line class="hand" x1="100" y1="106" x2="100" y2="22" />
+                            <line class="handInset" x1="100" y1="30" x2="100" y2="44" />
+                        </g>
+                        <g id="handSecond" class="handSecond">
+                            <line class="hand" x1="100" y1="114" x2="100" y2="16" />
+                        </g>
+                        <circle class="dialCap" cx="100" cy="100" r="3" />
+                    </svg>
+                </div>
+                <div class="clockSegment">
+                    <svg id="clockSeg" viewBox="0 0 1000 220" xmlns="http://www.w3.org/2000/svg"></svg>
+                </div>
+                <div id="clockWeather" class="clockWeather"></div>
             </div>
             <div id="clockNote"></div>
         </div>
+        <!-- Night shift: page-wide warm tint / dimming (Settings > Display) -->
+        <div id="wnpNightShift"></div>
+        <!-- Small clock over the now-playing view (Settings > Display) -->
+        <div id="wnpMiniClock" class="d-none pos-top-right size-m">--:--</div>
 
         <div class="wnpContainer">
 

@@ -612,21 +612,63 @@
 }
 /* ------------------------
  * Clock overlay (Settings > Display)
- * Pure black: on an OLED this is effectively "off" apart from the digits.
+ * Themed via CSS variables set from JS (WNP.applyClockTheme):
+ *   --clock-font, --clock-bg, --clock-fg, --clock-fg2, --clock-accent
+ * Add a theme: entry in WNP.clockThemes + an optional [data-theme="<id>"] block below.
  */
 #wnpClock {
+    --clock-font: "Manrope", system-ui, sans-serif;
+    --clock-bg: #000;
+    --clock-bg2: #000;
+    --clock-fg: #ede8df;
+    --clock-fg2: #8a857c;
+    --clock-accent: #c8a26b;
+
     position: fixed;
     inset: 0;
     z-index: 1040; // above the app, below Bootstrap modals (1055)
-    background: #000;
-    color: #ede8df;
+    background: var(--clock-bg);
+    color: var(--clock-fg);
+    font-family: var(--clock-font);
+
+    &.gradient {
+        background: linear-gradient(160deg, var(--clock-bg) 0%, var(--clock-bg2) 100%);
+    }
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: transform 2s ease;
+
+    // Hidden by default; .visible shows it. Entrance/exit per data-transition.
+    --drift: translate(0, 0);
+    opacity: 0;
+    pointer-events: none;
+    transform: var(--drift);
+    transition: opacity .6s ease, transform .6s cubic-bezier(.2, .8, .2, 1);
+
+    &[data-transition="slide-left"] { transform: translateX(100%) var(--drift); }
+    &[data-transition="slide-right"] { transform: translateX(-100%) var(--drift); }
+
+    &.visible {
+        opacity: 1;
+        pointer-events: auto;
+        transform: var(--drift);
+    }
 
     .wnpClockInner {
         text-align: center;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2vw;
+    }
+
+    // ---- digital
+    .clockDigital {
+        display: none;
+    }
+
+    &[data-kind="digital"] .clockDigital {
+        display: block;
     }
 
     #clockTime {
@@ -650,7 +692,183 @@
         margin-top: 2vw;
         font-size: 2.6vw;
         font-weight: 300;
-        color: #a39d92;
+        color: var(--clock-fg2);
+    }
+
+    // ---- analog
+    .clockAnalog {
+        display: none;
+        width: 62vh;
+        height: 62vh;
+    }
+
+    &[data-kind="analog"] .clockAnalog {
+        display: block;
+    }
+
+    &[data-kind="analog"] #clockDate {
+        margin-top: 0;
+    }
+
+    #clockDial {
+        width: 100%;
+        height: 100%;
+
+        .dialFace {
+            fill: none;
+            stroke: var(--clock-fg2);
+            stroke-width: .6;
+        }
+
+        .tickMajor {
+            stroke: var(--clock-fg);
+            stroke-width: 1.8;
+        }
+
+        .tickMinor {
+            stroke: var(--clock-fg2);
+            stroke-width: .6;
+        }
+
+        .dialNumber {
+            fill: var(--clock-fg);
+            font-family: var(--clock-font);
+            font-size: 11px;
+            font-weight: 500;
+        }
+
+        .dialBrand {
+            fill: var(--clock-fg);
+            font-family: var(--clock-font);
+            font-size: 9px;
+            letter-spacing: .12em;
+            text-transform: uppercase;
+        }
+
+        .dialSub {
+            fill: var(--clock-fg2);
+            font-family: var(--clock-font);
+            font-size: 6px;
+            letter-spacing: .25em;
+            text-transform: uppercase;
+        }
+
+        .dialFace {
+            fill: var(--clock-face);
+        }
+
+        .handInset {
+            stroke: var(--clock-inset);
+            stroke-width: 1.4;
+            stroke-linecap: round;
+        }
+
+        .handHour .hand {
+            stroke: var(--clock-hand);
+            stroke-width: 4.5;
+            stroke-linecap: round;
+        }
+
+        .handMinute .hand {
+            stroke: var(--clock-hand);
+            stroke-width: 3;
+            stroke-linecap: round;
+        }
+
+        .handSecond .hand {
+            stroke: var(--clock-accent);
+            stroke-width: 1;
+            stroke-linecap: round;
+        }
+
+        .dialCap {
+            fill: var(--clock-accent);
+        }
+    }
+
+    // ---- seven-segment
+    .clockSegment {
+        display: none;
+        width: 82vw;
+    }
+
+    &[data-kind="segment"] .clockSegment {
+        display: block;
+    }
+
+    &[data-kind="segment"] #clockDate {
+        margin-top: 0;
+        font-size: 2.2vw;
+        letter-spacing: .08em;
+    }
+
+    #clockSeg {
+        width: 100%;
+        height: auto;
+
+        .segOn {
+            fill: var(--clock-fg);
+        }
+
+        .segOff {
+            fill: var(--clock-fg);
+        }
+
+        .segTag {
+            fill: var(--clock-fg);
+            font-family: system-ui, sans-serif;
+            font-weight: 700;
+            font-size: 34px;
+        }
+    }
+
+    // ---- weather
+    .clockWeather {
+        color: var(--clock-fg2);
+        font-weight: 300;
+
+        .wxNow {
+            display: flex;
+            align-items: baseline;
+            justify-content: center;
+            gap: 1vw;
+            font-size: 2.6vw;
+
+            .bi {
+                color: var(--clock-accent);
+                font-size: 2.6vw;
+            }
+
+            .wxTemp {
+                color: var(--clock-fg);
+                font-size: 3.4vw;
+                font-weight: 500;
+            }
+        }
+
+        .wxDays {
+            display: flex;
+            gap: 4vw;
+            justify-content: center;
+            margin-top: 1.2vw;
+            font-size: 1.6vw;
+
+            .wxDay {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: .3vw;
+
+                .bi {
+                    font-size: 2.2vw;
+                    color: var(--clock-fg);
+                }
+
+                .wxRange small {
+                    color: var(--clock-fg2);
+                }
+            }
+        }
     }
 
     #clockNote {
@@ -658,8 +876,160 @@
         left: 6vw;
         bottom: 6vw;
         font-size: 1.6vw;
-        color: #5f5a52;
+        color: var(--clock-fg2);
     }
+
+    // ---- per-theme tweaks (fonts/colours come from JS; only geometry lives here)
+    &[data-theme="digital-mono"] #clockTime {
+        font-weight: 400;
+        letter-spacing: 0;
+        font-size: 20vw;
+    }
+
+    &[data-theme="digital-serif"] {
+        #clockTime {
+            font-weight: 400;
+            letter-spacing: -.02em;
+        }
+
+        #clockDate {
+            font-style: italic;
+        }
+    }
+
+    &[data-theme="digital-flip"] #clockTime {
+        font-weight: 400;
+        letter-spacing: .04em;
+        font-size: 28vw;
+
+        .colon {
+            opacity: .35;
+        }
+    }
+
+    &[data-theme="analog-bauhaus"] #clockDial {
+        .dialFace {
+            stroke: none;
+        }
+
+        .tickMinor {
+            display: none;
+        }
+
+        .tickMajor {
+            stroke-width: 3;
+        }
+
+        .handHour,
+        .handMinute {
+            stroke-linecap: butt;
+        }
+    }
+
+    // White alarm clock: white face with a soft rim, hands with white slots, yellow cap
+    &[data-theme="analog-alarm"] #clockDial {
+        .dialFace {
+            stroke: #d9d9d9;
+            stroke-width: 3;
+        }
+
+        .tickMajor {
+            stroke-width: 2.2;
+        }
+
+        .tickMinor {
+            stroke: var(--clock-fg);
+            stroke-width: .9;
+        }
+
+        .dialNumber {
+            font-size: 15px;
+            font-weight: 400;
+        }
+
+        .dialBrand {
+            font-size: 8px;
+            letter-spacing: 0;
+            text-transform: none;
+            font-weight: 700;
+        }
+
+        .dialSub {
+            font-size: 5px;
+            letter-spacing: .05em;
+            text-transform: none;
+        }
+
+        .handHour .hand {
+            stroke-width: 5.5;
+        }
+
+        .handMinute .hand {
+            stroke-width: 4;
+        }
+
+        .handSecond .hand {
+            stroke-width: 1.6;
+        }
+
+        .dialCap {
+            r: 9;
+            fill: var(--clock-accent);
+        }
+    }
+
+    // Bedside VFD: soft glow
+    &[data-theme="segment-bedside"] #clockSeg .segOn {
+        filter: drop-shadow(0 0 6px rgba(220, 239, 255, .55));
+    }
+
+    &[data-theme="analog-night"] #clockDial {
+        .tickMajor,
+        .dialNumber {
+            filter: drop-shadow(0 0 2px var(--clock-accent));
+        }
+    }
+}
+
+/* Night shift overlay: multiply blend keeps black black, tints and dims everything else. Above modals on purpose. */
+#wnpNightShift {
+    position: fixed;
+    inset: 0;
+    z-index: 3000;
+    pointer-events: none;
+    mix-blend-mode: multiply;
+    background: #fff;
+    opacity: 0;
+    transition: opacity 1.5s ease, background 1.5s ease;
+}
+
+/* Small clock over the now-playing view */
+#wnpMiniClock {
+    position: fixed;
+    z-index: 1030;
+    font-variant-numeric: tabular-nums;
+    font-weight: 300;
+    color: rgba(255, 255, 255, .85);
+    text-shadow: 0 2px 12px rgba(0, 0, 0, .6);
+    padding: 1vw 1.4vw;
+    pointer-events: none;
+
+    .colon {
+        display: inline-block;
+    }
+
+    .colon.dim {
+        opacity: .3;
+    }
+
+    &.pos-top-left { top: 0; left: 0; }
+    &.pos-top-right { top: 0; right: 0; }
+    &.pos-bottom-left { bottom: 0; left: 0; }
+    &.pos-bottom-right { bottom: 0; right: 0; }
+
+    &.size-s { font-size: 2.2vw; }
+    &.size-m { font-size: 3.4vw; }
+    &.size-l { font-size: 5vw; }
 }
 
 /* Idle blanking: everything black, clock included */
@@ -667,13 +1037,15 @@ body.wnp-blank {
     background: #000;
 
     #wnpApp,
-    #wnpClock {
+    #wnpClock,
+    #wnpMiniClock {
         visibility: hidden;
     }
 }
 
 @media (prefers-reduced-motion: reduce) {
     #wnpClock {
-        transition: none;
+        transition: opacity .2s linear;
+        transform: var(--drift) !important;
     }
 }

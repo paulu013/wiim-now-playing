@@ -33,6 +33,7 @@ const lib = require("./lib/lib.js"); // Generic functionality
 const lyrics = require("./lib/lyrics.js"); // Lyrics functionality
 const lyricsCache = require("./lib/lyricsCache.js");
 const external = require("./lib/external.js"); // Plex / Jellyfin sessions
+const weather = require("./lib/weather.js"); // Outside temperature / forecast (Open-Meteo)
 const log = require("debug")("index"); // See the documentation on debugging
 
 // For versionioning purposes
@@ -81,7 +82,27 @@ let serverSettings = { // Placeholder for current server settings
             "afterSeconds": 10, // ...after this many seconds of not playing
             "onInput": false, // Also show the clock while an HDMI/optical/line-in/bluetooth input is active
             "drift": true, // Nudge the clock a few pixels every minute (OLED burn-in)
-            "blankAfterMinutes": 0 // Blank the whole screen after this many idle minutes (0 = never)
+            "blankAfterMinutes": 0, // Blank the whole screen after this many idle minutes (0 = never)
+            "theme": "digital-minimal", // Day theme id, see client WNP.clockThemes
+            "nightTheme": "digital-minimal", // Theme used between sunset and sunrise when autoDayNight is on
+            "autoDayNight": false, // Switch themes on sunrise/sunset (needs weather location)
+            "override": { "enabled": false, "font": "" }, // Overrule theme font
+            "colors": { "custom": {}, "gradient": false, "nightDim": 100, "base": "#ede8df", "scheme": "mono" }, // Per-role colour overrides (see WNP.colorRoles), gradient bg, night dimming %
+            "dialText": { "brand": "", "sub": "" }, // Text on themes that have a dial label, e.g. "Paulus" / "Quartz"
+            "overlay": { "enabled": false, "position": "top-right", "size": "m" }, // Small clock over the now-playing view
+            "locale": "en-GB", // Language for date / day names: en-GB, nl-NL, ...
+            "swipe": { "enabled": false, "gesture": "left", "transition": "slide-left", "returnAfterSeconds": 30 } // Swipe to reveal the clock while playing
+        },
+        "weather": weather.DEFAULTS, // Outside temperature / forecast, see lib/weather.js
+        "display": {
+            "nightShift": { // Page-wide warm tint + dimming, like a phone's night mode
+                "enabled": false,
+                "schedule": "sun", // "sun" (sunset-sunrise, needs weather location; falls back to 19:00-07:00), "custom", "always"
+                "from": "22:00",
+                "to": "07:00",
+                "warmth": 60, // 0 = neutral, 100 = very warm
+                "brightness": 80 // 20-100 %
+            }
         },
         "external": external.DEFAULTS // Plex / Jellyfin sources, see lib/external.js
     },
@@ -96,6 +117,7 @@ let serverSettings = { // Placeholder for current server settings
 let pollState = null; // For the renderer state
 let pollMetadata = null; // For the renderer metadata
 let pollExternal = null; // For Plex / Jellyfin sessions
+let pollWeather = null; // For the weather
 
 // Device polling emits through this proxy: while an external (Plex/Jellyfin) session
 // is being shown, device state/metadata emits are held back. See lib/external.js.
@@ -283,6 +305,7 @@ io.on("connection", (socket) => {
         pollMetadata = upnp.startMetadata(ioDev, deviceInfo, serverSettings);
         pollState = upnp.startState(ioDev, deviceInfo, serverSettings);
         pollExternal = external.start(io, deviceInfo, serverSettings);
+        pollWeather = weather.start(io, serverSettings, lib);
     }
     else if (io.sockets.sockets.size >= 1) {
         // If new client, send current state and metadata 'immediately'
@@ -290,6 +313,7 @@ io.on("connection", (socket) => {
         const cur = external.currentMessages(deviceInfo, serverSettings);
         socket.emit("state", cur.state);
         socket.emit("metadata", cur.metadata);
+        if (weather.getCurrent()) { socket.emit("weather", weather.getCurrent()); }
         if (deviceInfo.lyrics) {
             socket.emit("lyrics-get", deviceInfo.lyrics);
             lyrics.getLyricsCacheStats(io);
@@ -313,6 +337,7 @@ io.on("connection", (socket) => {
             upnp.stopPolling(pollState, "pollState");
             upnp.stopPolling(pollMetadata, "pollMetadata");
             external.stop();
+            weather.stop();
         }
 
     });
@@ -458,7 +483,37 @@ io.on("connection", (socket) => {
         log("Socket event", "features-settings", msg);
         if (!msg || !msg.features) { return; }
         if (msg.features.clock && typeof msg.features.clock === "object") {
-            serverSettings.features.clock = { ...serverSettings.features.clock, ...msg.features.clock };
+            const c = msg.features.clock;
+            serverSettings.features.clock = {
+                ...serverSettings.features.clock, ...c,
+                override: { ...serverSettings.features.clock.override, ...(c.override || {}) },
+                dialText: { ...serverSettings.features.clock.dialText, ...(c.dialText || {}) },
+                overlay: { ...serverSettings.features.clock.overlay, ...(c.overlay || {}) },
+                swipe: { ...serverSettings.features.clock.swipe, ...(c.swipe || {}) },
+                colors: { ...serverSettings.features.clock.colors, ...(c.colors || {}) } // `custom` is replaced as a whole so resets stick
+            };
+        }
+        if (msg.features.display && typeof msg.features.display === "object") {
+            const d = msg.features.display;
+            serverSettings.features.display = {
+                ...serverSettings.features.display,
+                ...d,
+                nightShift: { ...serverSettings.features.display.nightShift, ...(d.nightShift || {}) }
+            };
+        }
+        if (msg.features.weather && typeof msg.features.weather === "object") {
+            const w = msg.features.weather;
+            const prev = serverSettings.features.weather;
+            serverSettings.features.weather = { ...prev, ...w };
+            // Location text changed: drop cached coordinates so it is geocoded again
+            if (typeof w.location === "string" && w.location !== prev.location) {
+                serverSettings.features.weather.lat = null;
+                serverSettings.features.weather.lon = null;
+                serverSettings.features.weather.name = "";
+            }
+            if (io.sockets.sockets.size > 0) {
+                pollWeather = weather.start(io, serverSettings, lib);
+            }
         }
         if (msg.features.external && typeof msg.features.external === "object") {
             const ext = msg.features.external;
@@ -475,6 +530,15 @@ io.on("connection", (socket) => {
         }
         lib.saveSettings(serverSettings);
         sockets.getServerSettings(io, serverSettings);
+    });
+
+    /**
+     * Listener for a weather refresh request.
+     * @returns {undefined}
+     */
+    socket.on("weather-get", () => {
+        log("Socket event", "weather-get");
+        weather.poll(io, serverSettings, lib);
     });
 
     // ======================================

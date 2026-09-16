@@ -26,13 +26,44 @@
         </div>
 
         <!-- Clock: shown when nothing is playing (see Settings > Display) -->
-        <div id="wnpClock" class="d-none" aria-live="off">
+        <div id="wnpClock" class="d-none" data-theme="digital-minimal" aria-live="off">
             <div class="wnpClockInner">
-                <div id="clockTime">--:--</div>
-                <div id="clockDate"></div>
+                <div class="clockDigital">
+                    <div id="clockTime">--:--</div>
+                    <div id="clockDate"></div>
+                </div>
+                <div class="clockAnalog">
+                    <svg id="clockDial" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+                        <circle class="dialFace" cx="100" cy="100" r="96" />
+                        <g id="dialTicks"></g>
+                        <g id="dialNumbers"></g>
+                        <text id="dialBrand" class="dialBrand" x="100" y="62" text-anchor="middle"></text>
+                        <text id="dialSub" class="dialSub" x="100" y="140" text-anchor="middle"></text>
+                        <g id="handHour" class="handHour">
+                            <line class="hand" x1="100" y1="106" x2="100" y2="48" />
+                            <line class="handInset" x1="100" y1="58" x2="100" y2="70" />
+                        </g>
+                        <g id="handMinute" class="handMinute">
+                            <line class="hand" x1="100" y1="106" x2="100" y2="22" />
+                            <line class="handInset" x1="100" y1="30" x2="100" y2="44" />
+                        </g>
+                        <g id="handSecond" class="handSecond">
+                            <line class="hand" x1="100" y1="114" x2="100" y2="16" />
+                        </g>
+                        <circle class="dialCap" cx="100" cy="100" r="3" />
+                    </svg>
+                </div>
+                <div class="clockSegment">
+                    <svg id="clockSeg" viewBox="0 0 1000 220" xmlns="http://www.w3.org/2000/svg"></svg>
+                </div>
+                <div id="clockWeather" class="clockWeather"></div>
             </div>
             <div id="clockNote"></div>
         </div>
+        <!-- Night shift: page-wide warm tint / dimming (Settings > Display) -->
+        <div id="wnpNightShift"></div>
+        <!-- Small clock over the now-playing view (Settings > Display) -->
+        <div id="wnpMiniClock" class="d-none pos-top-right size-m">--:--</div>
 
         <div class="wnpContainer">
 
@@ -292,6 +323,48 @@
                             <!-- Display Tab -->
                             <div class="tab-pane fade" id="display-pane" role="tabpanel" aria-labelledby="display-tab"
                                 tabindex="0">
+                                <div class="mb-3 pb-3 border-bottom">
+                                    <label class="form-label">Night shift (whole screen)</label>
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="chkNightShift">
+                                        <label class="form-check-label" for="chkNightShift">Warm tint and dim the
+                                            display, like a phone's night mode</label>
+                                    </div>
+                                    <div class="row g-2 mt-1 align-items-end">
+                                        <div class="col-4">
+                                            <label class="form-label small" for="selNightShiftSchedule">When</label>
+                                            <select class="form-select" id="selNightShiftSchedule">
+                                                <option value="sun">Sunset to sunrise</option>
+                                                <option value="custom">Custom times</option>
+                                                <option value="always">Always</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-4">
+                                            <label class="form-label small" for="nightShiftFrom">From</label>
+                                            <input class="form-control" type="time" id="nightShiftFrom">
+                                        </div>
+                                        <div class="col-4">
+                                            <label class="form-label small" for="nightShiftTo">To</label>
+                                            <input class="form-control" type="time" id="nightShiftTo">
+                                        </div>
+                                    </div>
+                                    <div class="mt-2">
+                                        <label class="form-label small" for="nightShiftWarmth">Colour temperature: less
+                                            warm ← → warmer (<span id="nightShiftWarmthValue">60</span>)</label>
+                                        <input type="range" class="form-range" id="nightShiftWarmth" min="0" max="100"
+                                            step="5">
+                                    </div>
+                                    <div class="mt-1">
+                                        <label class="form-label small" for="nightShiftBrightness">Brightness
+                                            (<span id="nightShiftBrightnessValue">80</span>%)</label>
+                                        <input type="range" class="form-range" id="nightShiftBrightness" min="20"
+                                            max="100" step="5">
+                                    </div>
+                                    <div class="form-text small text-muted">Sunset/sunrise come from the weather
+                                        location; without it 19:00–07:00 is used. The clock's own night dimming stacks
+                                        on top of this.</div>
+                                </div>
+
                                 <div class="mb-3">
                                     <label class="form-label">Clock</label>
                                     <div class="form-check form-switch">
@@ -323,6 +396,203 @@
                                         <div class="form-text small text-muted">On an OLED a black page is effectively
                                             off. Any playback wakes it.</div>
                                     </div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label" for="selClockLocale">Clock language</label>
+                                    <select class="form-select" id="selClockLocale">
+                                        <option value="en-GB">English</option>
+                                        <option value="nl-NL">Nederlands</option>
+                                        <option value="de-DE">Deutsch</option>
+                                        <option value="fr-FR">Français</option>
+                                    </select>
+                                    <div class="form-text small text-muted">Date, day names and the forecast follow this
+                                        language.</div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">Swipe to the clock while playing</label>
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="chkSwipeEnabled">
+                                        <label class="form-check-label" for="chkSwipeEnabled">Enable swipe gesture (touch
+                                            or mouse drag)</label>
+                                    </div>
+                                    <div class="row g-2 mt-1">
+                                        <div class="col-4">
+                                            <label class="form-label small" for="selSwipeGesture">Gesture</label>
+                                            <select class="form-select" id="selSwipeGesture">
+                                                <option value="left">Right → left</option>
+                                                <option value="right">Left → right</option>
+                                                <option value="any">Either way</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-4">
+                                            <label class="form-label small" for="selSwipeTransition">Transition</label>
+                                            <select class="form-select" id="selSwipeTransition">
+                                                <option value="slide-left">Slide in from right</option>
+                                                <option value="slide-right">Slide in from left</option>
+                                                <option value="fade">Crossfade</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-4">
+                                            <label class="form-label small" for="swipeReturnSeconds">Back after (s, 0 =
+                                                stay)</label>
+                                            <input class="form-control" type="number" id="swipeReturnSeconds" min="0"
+                                                max="3600" step="5">
+                                        </div>
+                                    </div>
+                                    <div class="form-text small text-muted">Swipe the other way, or tap the clock, to
+                                        return to now playing. The transition is also used when the clock appears by
+                                        itself.</div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">Clock theme</label>
+                                    <div class="row g-2">
+                                        <div class="col-6">
+                                            <label class="form-label small" for="selClockTheme">Day</label>
+                                            <select class="form-select" id="selClockTheme"></select>
+                                        </div>
+                                        <div class="col-6">
+                                            <label class="form-label small" for="selClockNightTheme">Night</label>
+                                            <select class="form-select" id="selClockNightTheme"></select>
+                                        </div>
+                                    </div>
+                                    <div class="form-check form-switch mt-2">
+                                        <input class="form-check-input" type="checkbox" id="chkClockAutoDayNight">
+                                        <label class="form-check-label" for="chkClockAutoDayNight">Switch at sunset /
+                                            sunrise (uses the weather location; falls back to 07:00–19:00)</label>
+                                    </div>
+                                    <div class="row g-2 mt-1">
+                                        <div class="col-6">
+                                            <label class="form-label small" for="clockDialBrand">Dial text (brand)</label>
+                                            <input class="form-control" type="text" id="clockDialBrand"
+                                                placeholder="Paulus">
+                                        </div>
+                                        <div class="col-6">
+                                            <label class="form-label small" for="clockDialSub">Dial text (below)</label>
+                                            <input class="form-control" type="text" id="clockDialSub"
+                                                placeholder="Quartz">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">Font</label>
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="chkClockOverride">
+                                        <label class="form-check-label" for="chkClockOverride">Use my own font instead
+                                            of the theme's</label>
+                                    </div>
+                                    <select class="form-select mt-1" id="selClockFont"></select>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">Colours</label>
+                                    <div class="form-text small text-muted mb-2">Each theme has its own defaults. Change
+                                        any role below; empty = theme default. On an OLED, a black background is
+                                        effectively off, so anything else costs burn-in headroom.</div>
+                                    <div class="input-group mb-2">
+                                        <select class="form-select" id="selClockColors"></select>
+                                        <button type="button" class="btn btn-secondary" id="btnApplyPreset">Apply preset
+                                            to all roles</button>
+                                        <button type="button" class="btn btn-outline-secondary" id="btnResetColors">Reset
+                                            all</button>
+                                    </div>
+                                    <div id="colorRoles" class="row g-2"></div>
+                                    <div class="form-check form-switch mt-2">
+                                        <input class="form-check-input" type="checkbox" id="chkClockGradient">
+                                        <label class="form-check-label" for="chkClockGradient">Gradient background (from
+                                            "Background" to "Background end")</label>
+                                    </div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">Colour scheme helper</label>
+                                    <div class="row g-2 align-items-end">
+                                        <div class="col-3">
+                                            <label class="form-label small" for="clockBaseColor">Base colour</label>
+                                            <input class="form-control form-control-color w-100" type="color"
+                                                id="clockBaseColor" value="#ede8df">
+                                        </div>
+                                        <div class="col-5">
+                                            <label class="form-label small" for="selClockScheme">Scheme</label>
+                                            <select class="form-select" id="selClockScheme">
+                                                <option value="mono">Monochromatic</option>
+                                                <option value="complementary">Complementary</option>
+                                                <option value="analogous">Analogous</option>
+                                                <option value="triadic">Triadic</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-4">
+                                            <button type="button" class="btn btn-secondary w-100"
+                                                id="btnApplyScheme">Fill digits, secondary, accent</button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label" for="clockNightDim">Night contrast: dim all colours to
+                                        <span id="clockNightDimValue">100</span>% between sunset and sunrise</label>
+                                    <input type="range" class="form-range" id="clockNightDim" min="30" max="100"
+                                        step="5">
+                                    <div class="form-text small text-muted">Uses the weather location for sunset and
+                                        sunrise; without it, 19:00–07:00 counts as night.</div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">Clock while playing</label>
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="chkOverlayEnabled">
+                                        <label class="form-check-label" for="chkOverlayEnabled">Show a small digital
+                                            clock over the now-playing view</label>
+                                    </div>
+                                    <div class="row g-2 mt-1">
+                                        <div class="col-6">
+                                            <label class="form-label small" for="selOverlayPosition">Position</label>
+                                            <select class="form-select" id="selOverlayPosition">
+                                                <option value="top-left">Top left</option>
+                                                <option value="top-right">Top right</option>
+                                                <option value="bottom-left">Bottom left</option>
+                                                <option value="bottom-right">Bottom right</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-6">
+                                            <label class="form-label small" for="selOverlaySize">Size</label>
+                                            <select class="form-select" id="selOverlaySize">
+                                                <option value="s">Small</option>
+                                                <option value="m">Medium</option>
+                                                <option value="l">Large</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">Weather on the clock (Open-Meteo, no key needed)</label>
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="chkWeatherTemp">
+                                        <label class="form-check-label" for="chkWeatherTemp">Outside temperature</label>
+                                    </div>
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="chkWeatherForecast">
+                                        <label class="form-check-label" for="chkWeatherForecast">3-day forecast</label>
+                                    </div>
+                                    <div class="row g-2 mt-1">
+                                        <div class="col-8">
+                                            <label class="form-label small" for="weatherLocation">Location</label>
+                                            <input class="form-control" type="text" id="weatherLocation"
+                                                placeholder="Venray">
+                                        </div>
+                                        <div class="col-4">
+                                            <label class="form-label small" for="selWeatherUnits">Units</label>
+                                            <select class="form-select" id="selWeatherUnits">
+                                                <option value="metric">°C</option>
+                                                <option value="imperial">°F</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="form-text small text-muted" id="weatherStatus"></div>
                                 </div>
                             </div>
 

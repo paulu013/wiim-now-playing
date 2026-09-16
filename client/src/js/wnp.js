@@ -14,7 +14,13 @@ WNP.s = {
     aDeviceUI: ["btnPrev", "btnPlay", "btnNext", "btnRefresh", "selDeviceChoices", "devName", "devNameHolder", "mediaTitle", "mediaSubTitle", "mediaArtist", "mediaAlbum", "mediaBitRate", "mediaBitDepth", "mediaSampleRate", "mediaQualityIdent", "devVol", "btnRepeat", "btnShuffle", "progressPlayed", "progressLeft", "progressPercent", "mediaSource", "albumArt", "bgAlbumArtBlur", "btnDevSelect", "oDeviceList", "btnDevPreset", "oPresetList", "btnDevVolume", "rVolume", "mediaLyrics", "lyricPrev", "lyricCurrent", "lyricNext", "lyricAfter", "alerts"],
     // Server actions to be used in the app
     aServerUI: ["btnReboot", "btnUpdate", "btnShutdown", "btnReloadUI", "sServerUrlHostname", "sServerUrlIP", "sServerVersion", "sClientVersion", "chkLyricsEnabled", "lyricsCacheSize", "btnClearLyricsCache", "lyricsOffsetMs",
-        "wnpClock", "clockTime", "clockDate", "clockNote", "chkClockEnabled", "chkClockOnInput", "chkClockDrift", "clockAfterSeconds", "clockBlankAfterMinutes",
+        "wnpClock", "clockTime", "clockDate", "clockNote", "clockWeather", "clockDial", "dialTicks", "dialNumbers", "dialBrand", "dialSub", "handHour", "handMinute", "handSecond", "clockSeg", "wnpMiniClock",
+        "chkClockEnabled", "chkClockOnInput", "chkClockDrift", "clockAfterSeconds", "clockBlankAfterMinutes",
+        "selClockTheme", "selClockNightTheme", "chkClockAutoDayNight", "clockDialBrand", "clockDialSub",
+        "chkClockOverride", "selClockFont", "selClockColors", "btnApplyPreset", "btnResetColors", "colorRoles", "chkClockGradient", "clockBaseColor", "selClockScheme", "btnApplyScheme", "clockNightDim", "clockNightDimValue", "chkOverlayEnabled", "selOverlayPosition", "selOverlaySize",
+        "chkWeatherTemp", "chkWeatherForecast", "weatherLocation", "selWeatherUnits", "weatherStatus",
+        "selClockLocale", "chkSwipeEnabled", "selSwipeGesture", "selSwipeTransition", "swipeReturnSeconds",
+        "wnpNightShift", "chkNightShift", "selNightShiftSchedule", "nightShiftFrom", "nightShiftTo", "nightShiftWarmth", "nightShiftWarmthValue", "nightShiftBrightness", "nightShiftBrightnessValue",
         "chkExternalEnabled", "selExternalPriority", "plexUrl", "plexToken", "plexPlayers", "jellyfinUrl", "jellyfinApiKey", "jellyfinPlayers", "btnSaveSources"],
     // Default timeout for alerts in ms
     alertTimeoutMs: 5000
@@ -37,7 +43,13 @@ WNP.d = {
     lastPlayingMs: Date.now(), // Last time something was playing (or an input was active), used by the clock logic
     clockVisible: false, // Whether the clock overlay is currently shown
     clockTimer: null, // Clock tick interval
-    driftTimer: null // Clock drift interval
+    driftTimer: null, // Clock drift interval
+    weather: null, // Last weather message
+    appliedTheme: null, // Theme id currently applied to the clock overlay
+    loadedFonts: {}, // Google Fonts already injected
+    manualClock: false, // Clock revealed by swipe
+    manualClockUntil: 0, // ...and auto-return deadline (ms epoch, 0 = stay)
+    swipeStart: null // Pointer start for swipe detection
 };
 
 // Reference placeholders.
@@ -205,19 +217,51 @@ WNP.setUIListeners = function () {
         location.reload();
     });
 
-    // Clock settings
-    var clockInputs = ["chkClockEnabled", "chkClockOnInput", "chkClockDrift", "clockAfterSeconds", "clockBlankAfterMinutes"];
+    // Clock + weather settings: any change re-sends the whole block
+    this.fillClockSelects();
+    var clockInputs = ["chkClockEnabled", "chkClockOnInput", "chkClockDrift", "clockAfterSeconds", "clockBlankAfterMinutes",
+        "selClockTheme", "selClockNightTheme", "chkClockAutoDayNight", "clockDialBrand", "clockDialSub",
+        "chkClockOverride", "selClockFont", "selClockColors", "btnApplyPreset", "btnResetColors", "colorRoles", "chkClockGradient", "clockBaseColor", "selClockScheme", "btnApplyScheme", "clockNightDim", "clockNightDimValue", "chkOverlayEnabled", "selOverlayPosition", "selOverlaySize",
+        "selClockLocale", "chkSwipeEnabled", "selSwipeGesture", "selSwipeTransition", "swipeReturnSeconds"];
     clockInputs.forEach(function (id) {
+        if (!WNP.r[id]) { return; }
+        WNP.r[id].addEventListener("change", function () { WNP.emitClockSettings(); });
+    });
+    // Night shift settings
+    if (this.r.chkNightShift) {
+        var nsEmit = function () {
+            socket.emit("features-settings", {
+                features: {
+                    display: {
+                        nightShift: {
+                            enabled: WNP.r.chkNightShift.checked,
+                            schedule: WNP.r.selNightShiftSchedule.value,
+                            from: WNP.r.nightShiftFrom.value || "22:00",
+                            to: WNP.r.nightShiftTo.value || "07:00",
+                            warmth: parseInt(WNP.r.nightShiftWarmth.value, 10) || 0,
+                            brightness: parseInt(WNP.r.nightShiftBrightness.value, 10) || 100
+                        }
+                    }
+                }
+            });
+        };
+        ["chkNightShift", "selNightShiftSchedule", "nightShiftFrom", "nightShiftTo", "nightShiftWarmth", "nightShiftBrightness"].forEach(function (id) {
+            WNP.r[id].addEventListener("change", nsEmit);
+        });
+        this.r.nightShiftWarmth.addEventListener("input", function () { WNP.r.nightShiftWarmthValue.innerText = this.value; WNP.previewNightShift(); });
+        this.r.nightShiftBrightness.addEventListener("input", function () { WNP.r.nightShiftBrightnessValue.innerText = this.value; WNP.previewNightShift(); });
+    }
+
+    ["chkWeatherTemp", "chkWeatherForecast", "weatherLocation", "selWeatherUnits"].forEach(function (id) {
         if (!WNP.r[id]) { return; }
         WNP.r[id].addEventListener("change", function () {
             socket.emit("features-settings", {
                 features: {
-                    clock: {
-                        enabled: WNP.r.chkClockEnabled.checked,
-                        onInput: WNP.r.chkClockOnInput.checked,
-                        drift: WNP.r.chkClockDrift.checked,
-                        afterSeconds: Math.max(0, parseInt(WNP.r.clockAfterSeconds.value, 10) || 0),
-                        blankAfterMinutes: Math.max(0, parseInt(WNP.r.clockBlankAfterMinutes.value, 10) || 0)
+                    weather: {
+                        enabled: WNP.r.chkWeatherTemp.checked,
+                        forecast: WNP.r.chkWeatherForecast.checked,
+                        location: WNP.r.weatherLocation.value.trim(),
+                        units: WNP.r.selWeatherUnits.value
                     }
                 }
             });
@@ -361,7 +405,62 @@ WNP.setSocketDefinitions = function () {
             WNP.r.chkClockDrift.checked = clk.drift !== false;
             WNP.r.clockAfterSeconds.value = (typeof clk.afterSeconds === "number") ? clk.afterSeconds : 10;
             WNP.r.clockBlankAfterMinutes.value = (typeof clk.blankAfterMinutes === "number") ? clk.blankAfterMinutes : 0;
+            WNP.r.selClockTheme.value = clk.theme || "digital-minimal";
+            WNP.r.selClockNightTheme.value = clk.nightTheme || clk.theme || "digital-minimal";
+            WNP.r.chkClockAutoDayNight.checked = Boolean(clk.autoDayNight);
+            WNP.r.clockDialBrand.value = (clk.dialText && clk.dialText.brand) || "";
+            WNP.r.clockDialSub.value = (clk.dialText && clk.dialText.sub) || "";
+            WNP.r.chkClockOverride.checked = Boolean(clk.override && clk.override.enabled);
+            WNP.r.selClockFont.value = (clk.override && clk.override.font) || "";
+            var col = clk.colors || {};
+            WNP.r.chkClockGradient.checked = Boolean(col.gradient);
+            WNP.r.clockNightDim.value = (typeof col.nightDim === "number") ? col.nightDim : 100;
+            WNP.r.clockNightDimValue.innerText = WNP.r.clockNightDim.value;
+            if (col.base) { WNP.r.clockBaseColor.value = col.base; }
+            if (col.scheme) { WNP.r.selClockScheme.value = col.scheme; }
+            var themeNow = WNP.clockThemes[clk.theme] || WNP.clockThemes["digital-minimal"];
+            var eff = WNP.effectiveColors(themeNow);
+            var custom = col.custom || {};
+            WNP.colorRoles.forEach(function (r) {
+                var inp = document.getElementById("role_" + r.id);
+                if (!inp) { return; }
+                inp.value = eff[r.id];
+                inp.parentElement.parentElement.classList.toggle("opacity-50", !custom[r.id]);
+                inp.parentElement.parentElement.style.display = (r.kinds.indexOf(themeNow.kind) >= 0) ? "" : "none";
+            });
+            WNP.r.chkOverlayEnabled.checked = Boolean(clk.overlay && clk.overlay.enabled);
+            WNP.r.selOverlayPosition.value = (clk.overlay && clk.overlay.position) || "top-right";
+            WNP.r.selOverlaySize.value = (clk.overlay && clk.overlay.size) || "m";
+            WNP.r.selClockLocale.value = clk.locale || "en-GB";
+            WNP.r.chkSwipeEnabled.checked = Boolean(clk.swipe && clk.swipe.enabled);
+            WNP.r.selSwipeGesture.value = (clk.swipe && clk.swipe.gesture) || "left";
+            WNP.r.selSwipeTransition.value = (clk.swipe && clk.swipe.transition) || "slide-left";
+            WNP.r.swipeReturnSeconds.value = (clk.swipe && typeof clk.swipe.returnAfterSeconds === "number") ? clk.swipe.returnAfterSeconds : 30;
         }
+        var ns = (msg && msg.features && msg.features.display && msg.features.display.nightShift) || {};
+        if (WNP.r.chkNightShift) {
+            WNP.r.chkNightShift.checked = Boolean(ns.enabled);
+            WNP.r.selNightShiftSchedule.value = ns.schedule || "sun";
+            WNP.r.nightShiftFrom.value = ns.from || "22:00";
+            WNP.r.nightShiftTo.value = ns.to || "07:00";
+            WNP.r.nightShiftWarmth.value = (typeof ns.warmth === "number") ? ns.warmth : 60;
+            WNP.r.nightShiftWarmthValue.innerText = WNP.r.nightShiftWarmth.value;
+            WNP.r.nightShiftBrightness.value = (typeof ns.brightness === "number") ? ns.brightness : 80;
+            WNP.r.nightShiftBrightnessValue.innerText = WNP.r.nightShiftBrightness.value;
+        }
+        WNP.applyNightShift();
+        var wx = (msg && msg.features && msg.features.weather) ? msg.features.weather : {};
+        if (WNP.r.chkWeatherTemp) {
+            WNP.r.chkWeatherTemp.checked = Boolean(wx.enabled);
+            WNP.r.chkWeatherForecast.checked = Boolean(wx.forecast);
+            WNP.r.weatherLocation.value = wx.location || "";
+            WNP.r.selWeatherUnits.value = wx.units || "metric";
+            WNP.r.weatherStatus.innerText = wx.name ? ("Resolved to: " + wx.name) : (wx.location ? "Resolving location..." : "");
+        }
+        WNP.d.appliedTheme = null; // Re-apply theme with the new settings
+        WNP.applyClockTheme();
+        WNP.applyMiniClock();
+
         // External sources settings
         var ext = (msg && msg.features && msg.features.external) ? msg.features.external : {};
         if (WNP.r.chkExternalEnabled) {
@@ -709,6 +808,15 @@ WNP.setSocketDefinitions = function () {
     socket.on("lyrics-cache-stats", function (msg) {
         // console.log("IO: lyrics-cache-stats", msg);
         WNP.r.lyricsCacheSize.value = (msg && msg.count) ? `${msg.count} items cached` : "no items cached";
+    });
+
+    // On weather
+    socket.on("weather", function (msg) {
+        WNP.d.weather = msg || null;
+        WNP.renderWeather();
+        if (WNP.r.weatherStatus && msg) {
+            WNP.r.weatherStatus.innerText = msg.error ? ("Weather: " + msg.error) : ("Weather for " + msg.name + ", updated " + new Date(msg.updated).toLocaleTimeString());
+        }
     });
 
     // On device set
@@ -1166,6 +1274,438 @@ WNP.rndNumber = function (min, max) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 };
 
+// =======================================================
+// Clock overlay, themes, weather, mini clock (Settings > Display)
+
+/**
+ * Clock themes. Adding a theme = one entry here + a `#wnpClock[data-theme="<id>"]` block in wnp.scss.
+ * kind: "digital" | "analog"; font: Google Fonts family (loaded on demand) or "" for system;
+ * colors: preset id from WNP.clockColors; dial: whether brand/sub text is shown (analog dial or under digital time).
+ */
+WNP.clockThemes = {
+    "digital-minimal": { name: "Digital – minimal", kind: "digital", font: "Manrope", colors: "ink", dial: false },
+    "digital-mono": { name: "Digital – terminal", kind: "digital", font: "JetBrains Mono", colors: "phosphor", dial: false },
+    "digital-serif": { name: "Digital – editorial", kind: "digital", font: "Playfair Display", colors: "paper", dial: true },
+    "digital-flip": { name: "Digital – flap board", kind: "digital", font: "Bebas Neue", colors: "flap", dial: false },
+    "analog-classic": { name: "Analog – classic", kind: "analog", font: "Cormorant Garamond", colors: "ink", dial: true, numerals: "arabic" },
+    "analog-bauhaus": { name: "Analog – bauhaus", kind: "analog", font: "DM Sans", colors: "bauhaus", dial: true, numerals: "none" },
+    "analog-night": { name: "Analog – night dial", kind: "analog", font: "Manrope", colors: "lume", dial: true, numerals: "quarters" },
+    "analog-alarm": { name: "Analog – white alarm clock", kind: "analog", font: "DM Sans", colors: "alarm", dial: true, numerals: "arabic", brandY: 58, subY: 68 },
+    "segment-bedside": { name: "Seven-segment – bedside", kind: "segment", font: "", colors: "vfd", dial: false, separator: "dot", skew: -8, ghost: 0 },
+    "segment-alarm": { name: "Seven-segment – alarm clock", kind: "segment", font: "", colors: "lcd", dial: false, separator: "colon", skew: 0, ghost: 0.06, ampm: true, aux: true }
+};
+
+/** Colour roles on the clock. Every preset defines all of them; a theme picks a preset as its defaults. */
+WNP.colorRoles = [
+    { id: "bg", name: "Background", kinds: ["digital", "analog", "segment"] },
+    { id: "bg2", name: "Background end (gradient)", kinds: ["digital", "analog", "segment"] },
+    { id: "face", name: "Dial face", kinds: ["analog"] },
+    { id: "fg", name: "Digits / numerals / ticks", kinds: ["digital", "analog", "segment"] },
+    { id: "fg2", name: "Secondary text", kinds: ["digital", "analog", "segment"] },
+    { id: "hand", name: "Hour and minute hands", kinds: ["analog"] },
+    { id: "inset", name: "Hand inset", kinds: ["analog"] },
+    { id: "accent", name: "Second hand / accent", kinds: ["digital", "analog", "segment"] }
+];
+
+/** Colour presets: bg, bg2 (gradient end), face (dial), fg (digits/numerals), fg2 (secondary), hand, inset, accent. */
+WNP.clockColors = {
+    "ink": { name: "Warm white on black", bg: "#000000", bg2: "#1a1714", face: "#000000", fg: "#ede8df", fg2: "#8a857c", hand: "#ede8df", inset: "#000000", accent: "#c8a26b" },
+    "paper": { name: "Cream on black", bg: "#000000", bg2: "#1d1712", face: "#000000", fg: "#f2ead8", fg2: "#9a927e", hand: "#f2ead8", inset: "#000000", accent: "#b45f3c" },
+    "phosphor": { name: "Green phosphor", bg: "#000000", bg2: "#06140a", face: "#000000", fg: "#7dff9b", fg2: "#2f8a45", hand: "#7dff9b", inset: "#000000", accent: "#c6ffd1" },
+    "amber": { name: "Amber", bg: "#000000", bg2: "#1a1000", face: "#000000", fg: "#ffb547", fg2: "#8c5a1a", hand: "#ffb547", inset: "#000000", accent: "#fff1d6" },
+    "flap": { name: "Flap board", bg: "#000000", bg2: "#141414", face: "#000000", fg: "#f4f4f4", fg2: "#6c6c6c", hand: "#f4f4f4", inset: "#000000", accent: "#f4f4f4" },
+    "bauhaus": { name: "Bauhaus", bg: "#000000", bg2: "#171717", face: "#000000", fg: "#f1efe6", fg2: "#5b5b5b", hand: "#f1efe6", inset: "#000000", accent: "#d9342b" },
+    "lume": { name: "Lume", bg: "#000000", bg2: "#06110b", face: "#000000", fg: "#cfe6d8", fg2: "#3b5446", hand: "#cfe6d8", inset: "#000000", accent: "#9df0c1" },
+    "ice": { name: "Ice blue", bg: "#000000", bg2: "#0a1220", face: "#000000", fg: "#dbe9ff", fg2: "#5f7594", hand: "#dbe9ff", inset: "#000000", accent: "#8ec5ff" },
+    "alarm": { name: "White alarm clock", bg: "#000000", bg2: "#1a1a1a", face: "#ffffff", fg: "#161616", fg2: "#6a6a6a", hand: "#161616", inset: "#ffffff", accent: "#f2b705" },
+    "vfd": { name: "Cool white VFD", bg: "#000000", bg2: "#0a1018", face: "#000000", fg: "#dcefff", fg2: "#4e6478", hand: "#dcefff", inset: "#000000", accent: "#dcefff" },
+    "lcd": { name: "Lavender LCD", bg: "#000000", bg2: "#0e0f1c", face: "#000000", fg: "#b9c4ee", fg2: "#5a628a", hand: "#b9c4ee", inset: "#000000", accent: "#3ad35a" },
+    "red-led": { name: "Red LED", bg: "#000000", bg2: "#180605", face: "#000000", fg: "#ff3b2f", fg2: "#5a1a16", hand: "#ff3b2f", inset: "#000000", accent: "#ff3b2f" },
+    "daylight": { name: "Daylight (light background)", bg: "#f3efe6", bg2: "#e2dccf", face: "#ffffff", fg: "#1c1a17", fg2: "#6e685f", hand: "#1c1a17", inset: "#ffffff", accent: "#c8442e" }
+};
+
+// ---- colour maths (hex <-> hsl) for schemes and night dimming
+WNP.hexToHsl = function (hex) {
+    var m = /^#?([0-9a-f]{6})$/i.exec(hex || "");
+    if (!m) { return null; }
+    var n = parseInt(m[1], 16), r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+    var max = Math.max(r, g, b), min = Math.min(r, g, b), h = 0, s = 0, l = (max + min) / 2, d = max - min;
+    if (d) {
+        s = l > .5 ? d / (2 - max - min) : d / (max + min);
+        if (max === r) { h = (g - b) / d + (g < b ? 6 : 0); }
+        else if (max === g) { h = (b - r) / d + 2; }
+        else { h = (r - g) / d + 4; }
+        h *= 60;
+    }
+    return { h: h, s: s, l: l };
+};
+WNP.hslToHex = function (h, s, l) {
+    h = ((h % 360) + 360) % 360; s = Math.max(0, Math.min(1, s)); l = Math.max(0, Math.min(1, l));
+    var c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = l - c / 2, r, g, b;
+    if (h < 60) { r = c; g = x; b = 0; } else if (h < 120) { r = x; g = c; b = 0; } else if (h < 180) { r = 0; g = c; b = x; }
+    else if (h < 240) { r = 0; g = x; b = c; } else if (h < 300) { r = x; g = 0; b = c; } else { r = c; g = 0; b = x; }
+    var to = function (v) { return Math.round((v + m) * 255).toString(16).padStart(2, "0"); };
+    return "#" + to(r) + to(g) + to(b);
+};
+/** Multiply RGB channels (factor 0..1): hue-preserving darkening. Used for night dimming and secondary text. */
+WNP.dimHex = function (hex, factor) {
+    var m = /^#?([0-9a-f]{6})$/i.exec(hex || "");
+    if (!m || factor >= 1) { return hex; }
+    var n = parseInt(m[1], 16);
+    var to = function (v) { return Math.round(Math.max(0, Math.min(255, v * factor))).toString(16).padStart(2, "0"); };
+    return "#" + to((n >> 16) & 255) + to((n >> 8) & 255) + to(n & 255);
+};
+/** Derive fg / fg2 / accent from a base colour and a scheme. */
+WNP.schemeColors = function (base, scheme) {
+    var c = this.hexToHsl(base) || { h: 40, s: .2, l: .9 };
+    var sat = Math.min(Math.max(c.s, .35), .75); // derived hues: neither muddy nor neon
+    var fg = base;
+    var fg2 = this.dimHex(base, .55);
+    var accent;
+    switch (scheme) {
+        case "complementary": accent = this.hslToHex(c.h + 180, sat, .62); break;
+        case "analogous": fg2 = this.hslToHex(c.h - 30, sat * .6, .42); accent = this.hslToHex(c.h + 30, sat, .68); break;
+        case "triadic": fg2 = this.hslToHex(c.h + 120, sat * .6, .42); accent = this.hslToHex(c.h + 240, sat, .66); break;
+        default: accent = c.l > .8 ? this.hslToHex(c.h, Math.min(1, c.s + .2), .72) : this.hslToHex(c.h, c.s, Math.min(.95, c.l + .2)); // mono
+    }
+    return { fg: fg, fg2: fg2, accent: accent };
+};
+
+/** Fonts offered in the override dropdown (Google Fonts family names). */
+WNP.clockFonts = ["Manrope", "Inter", "DM Sans", "JetBrains Mono", "Roboto Mono", "Bebas Neue", "Oswald", "Playfair Display", "Cormorant Garamond", "DM Serif Display", "Orbitron", "Fraunces"];
+
+/** Populate the theme/font/colour selects in the settings modal. */
+WNP.fillClockSelects = function () {
+    if (!this.r.selClockTheme) { return; }
+    var themeOpts = Object.keys(this.clockThemes).map(function (id) { return '<option value="' + id + '">' + WNP.clockThemes[id].name + '</option>'; }).join("");
+    this.r.selClockTheme.innerHTML = themeOpts;
+    this.r.selClockNightTheme.innerHTML = themeOpts;
+    this.r.selClockFont.innerHTML = '<option value="">Theme default</option>' + this.clockFonts.map(function (f) { return '<option value="' + f + '">' + f + '</option>'; }).join("");
+    this.r.selClockColors.innerHTML = Object.keys(this.clockColors).map(function (id) { return '<option value="' + id + '">' + WNP.clockColors[id].name + '</option>'; }).join("");
+    this.r.colorRoles.innerHTML = this.colorRoles.map(function (r) {
+        return '<div class="col-6 col-md-4"><label class="form-label small mb-0" for="role_' + r.id + '">' + r.name + '</label>'
+            + '<div class="input-group input-group-sm"><input type="color" class="form-control form-control-color" id="role_' + r.id + '" data-role="' + r.id + '">'
+            + '<button type="button" class="btn btn-outline-secondary" data-reset="' + r.id + '" title="Theme default">&times;</button></div></div>';
+    }).join("");
+    var self = this;
+    this.r.colorRoles.querySelectorAll("input[type=color]").forEach(function (inp) {
+        inp.addEventListener("input", function () { self.setRoleColor(this.dataset.role, this.value); });
+    });
+    this.r.colorRoles.querySelectorAll("button[data-reset]").forEach(function (btn) {
+        btn.addEventListener("click", function () { self.setRoleColor(this.dataset.reset, null); });
+    });
+    this.r.btnApplyPreset.addEventListener("click", function () {
+        var p = self.clockColors[self.r.selClockColors.value];
+        if (!p) { return; }
+        var custom = {};
+        self.colorRoles.forEach(function (r) { custom[r.id] = p[r.id]; });
+        self.setCustomColors(custom);
+    });
+    this.r.btnResetColors.addEventListener("click", function () { self.setCustomColors({}); });
+    this.r.btnApplyScheme.addEventListener("click", function () {
+        var derived = self.schemeColors(self.r.clockBaseColor.value, self.r.selClockScheme.value);
+        var custom = { ...(self.clockCfg().colors && self.clockCfg().colors.custom || {}), ...derived, hand: derived.fg };
+        self.setCustomColors(custom, { base: self.r.clockBaseColor.value, scheme: self.r.selClockScheme.value });
+    });
+    this.r.chkClockGradient.addEventListener("change", function () { self.emitClockSettings(); });
+    this.r.clockNightDim.addEventListener("input", function () { self.r.clockNightDimValue.innerText = this.value; });
+    this.r.clockNightDim.addEventListener("change", function () { self.emitClockSettings(); });
+};
+
+/** Set one role's custom colour (null = back to theme default) and save. */
+WNP.setRoleColor = function (role, hex) {
+    var custom = { ...((this.clockCfg().colors && this.clockCfg().colors.custom) || {}) };
+    if (hex) { custom[role] = hex; } else { delete custom[role]; }
+    this.setCustomColors(custom);
+};
+
+WNP.setCustomColors = function (custom, extra) {
+    if (!this.d.serverSettings) { return; }
+    this.d.serverSettings.features.clock.colors = { ...(this.clockCfg().colors || {}), ...(extra || {}), custom: custom };
+    this.emitClockSettings();
+};
+
+/** Effective palette for a theme: preset defaults overlaid with the user's custom roles. */
+WNP.effectiveColors = function (theme) {
+    var preset = this.clockColors[theme.colors] || this.clockColors.ink;
+    var custom = (this.clockCfg().colors && this.clockCfg().colors.custom) || {};
+    var out = {};
+    this.colorRoles.forEach(function (r) { out[r.id] = custom[r.id] || preset[r.id]; });
+    return out;
+};
+
+/** Send the complete clock settings block to the server. */
+WNP.emitClockSettings = function () {
+    socket.emit("features-settings", {
+        features: {
+            clock: {
+                enabled: this.r.chkClockEnabled.checked,
+                onInput: this.r.chkClockOnInput.checked,
+                drift: this.r.chkClockDrift.checked,
+                afterSeconds: Math.max(0, parseInt(this.r.clockAfterSeconds.value, 10) || 0),
+                blankAfterMinutes: Math.max(0, parseInt(this.r.clockBlankAfterMinutes.value, 10) || 0),
+                theme: this.r.selClockTheme.value,
+                nightTheme: this.r.selClockNightTheme.value,
+                autoDayNight: this.r.chkClockAutoDayNight.checked,
+                dialText: { brand: this.r.clockDialBrand.value.trim(), sub: this.r.clockDialSub.value.trim() },
+                override: { enabled: this.r.chkClockOverride.checked, font: this.r.selClockFont.value },
+                colors: {
+                    ...((this.clockCfg().colors) || {}),
+                    gradient: this.r.chkClockGradient.checked,
+                    nightDim: parseInt(this.r.clockNightDim.value, 10) || 100,
+                    custom: (this.clockCfg().colors && this.clockCfg().colors.custom) || {}
+                },
+                overlay: { enabled: this.r.chkOverlayEnabled.checked, position: this.r.selOverlayPosition.value, size: this.r.selOverlaySize.value },
+                locale: this.r.selClockLocale.value,
+                swipe: { enabled: this.r.chkSwipeEnabled.checked, gesture: this.r.selSwipeGesture.value, transition: this.r.selSwipeTransition.value, returnAfterSeconds: Math.max(0, parseInt(this.r.swipeReturnSeconds.value, 10) || 0) }
+            }
+        }
+    });
+};
+
+WNP.clockLocale = function () {
+    return this.clockCfg().locale || undefined;
+};
+
+WNP.clockCfg = function () {
+    return (this.d.serverSettings && this.d.serverSettings.features && this.d.serverSettings.features.clock) || {};
+};
+
+/** Load a Google Font once. Falls back silently to system fonts when offline. */
+WNP.loadFont = function (family) {
+    if (!family || this.d.loadedFonts[family]) { return; }
+    this.d.loadedFonts[family] = true;
+    var link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = "https://fonts.googleapis.com/css2?family=" + encodeURIComponent(family).replace(/%20/g, "+") + ":wght@300;400;500;700&display=swap";
+    document.head.appendChild(link);
+};
+
+/** Night = between sunset and sunrise from the weather data, else 19:00–07:00. */
+WNP.isNight = function () {
+    var now = new Date();
+    var w = this.d.weather;
+    if (w && w.sunrise && w.sunset) {
+        var sr = new Date(w.sunrise), ss = new Date(w.sunset);
+        var t = now.getHours() * 60 + now.getMinutes();
+        var a = sr.getHours() * 60 + sr.getMinutes(), b = ss.getHours() * 60 + ss.getMinutes();
+        return t < a || t >= b;
+    }
+    return now.getHours() >= 19 || now.getHours() < 7;
+};
+
+/** Apply theme + overrides to the clock overlay (idempotent; cheap to call every second). */
+WNP.applyClockTheme = function () {
+    if (!this.r.wnpClock) { return; }
+    var cfg = this.clockCfg();
+    var id = cfg.theme || "digital-minimal";
+    if (cfg.autoDayNight && cfg.nightTheme && this.isNight()) { id = cfg.nightTheme; }
+    var theme = this.clockThemes[id] || this.clockThemes["digital-minimal"];
+    var ov = cfg.override || {};
+    var font = (ov.enabled && ov.font) ? ov.font : theme.font;
+    var colors = this.effectiveColors(theme);
+    var colCfg = cfg.colors || {};
+    var night = this.isNight();
+    var dim = night && typeof colCfg.nightDim === "number" ? colCfg.nightDim / 100 : 1;
+    if (dim < 1) {
+        var dimmed = {};
+        Object.keys(colors).forEach(function (k) { dimmed[k] = WNP.dimHex(colors[k], dim); });
+        colors = dimmed;
+    }
+    var key = [id, font, JSON.stringify(colors), colCfg.gradient, cfg.dialText && cfg.dialText.brand, cfg.dialText && cfg.dialText.sub].join("|");
+    if (key === this.d.appliedTheme) { return; }
+    this.d.appliedTheme = key;
+
+    if (font) { this.loadFont(font); }
+    var el = this.r.wnpClock;
+    el.setAttribute("data-theme", id);
+    el.setAttribute("data-kind", theme.kind);
+    el.style.setProperty("--clock-font", font ? ('"' + font + '", system-ui, sans-serif') : "system-ui, sans-serif");
+    el.style.setProperty("--clock-bg", colors.bg);
+    el.style.setProperty("--clock-bg2", colors.bg2 || colors.bg);
+    el.style.setProperty("--clock-fg", colors.fg);
+    el.style.setProperty("--clock-fg2", colors.fg2);
+    el.style.setProperty("--clock-accent", colors.accent);
+    el.style.setProperty("--clock-face", colors.face || colors.bg);
+    el.style.setProperty("--clock-hand", colors.hand || colors.fg);
+    el.style.setProperty("--clock-inset", colors.inset || colors.face || colors.bg);
+    el.classList.toggle("gradient", Boolean(colCfg.gradient));
+
+    // Dial text
+    var brand = (cfg.dialText && cfg.dialText.brand) || "";
+    var sub = (cfg.dialText && cfg.dialText.sub) || "";
+    this.r.dialBrand.textContent = theme.dial ? brand : "";
+    this.r.dialSub.textContent = theme.dial ? sub : "";
+    this.r.dialBrand.setAttribute("y", theme.brandY || 62);
+    this.r.dialSub.setAttribute("y", theme.subY || 140);
+
+    // Analog dial: ticks and numerals
+    if (theme.kind === "analog") {
+        var ticks = "", nums = "";
+        for (var i = 0; i < 60; i++) {
+            var major = i % 5 === 0;
+            var a = i * 6 * Math.PI / 180;
+            var r1 = major ? 86 : 91, r2 = 95;
+            ticks += '<line class="' + (major ? "tickMajor" : "tickMinor") + '" x1="' + (100 + r1 * Math.sin(a)).toFixed(2) + '" y1="' + (100 - r1 * Math.cos(a)).toFixed(2) + '" x2="' + (100 + r2 * Math.sin(a)).toFixed(2) + '" y2="' + (100 - r2 * Math.cos(a)).toFixed(2) + '"/>';
+        }
+        var numerals = theme.numerals || "none";
+        for (var h = 1; h <= 12; h++) {
+            if (numerals === "none") { break; }
+            if (numerals === "quarters" && h % 3 !== 0) { continue; }
+            var ah = h * 30 * Math.PI / 180;
+            nums += '<text class="dialNumber" x="' + (100 + 74 * Math.sin(ah)).toFixed(2) + '" y="' + (100 - 74 * Math.cos(ah) + 4).toFixed(2) + '" text-anchor="middle">' + h + '</text>';
+        }
+        this.r.dialTicks.innerHTML = ticks;
+        this.r.dialNumbers.innerHTML = nums;
+    }
+};
+
+/** WMO weather code -> Bootstrap icon class + short label. */
+WNP.weatherIcon = function (code, isDay) {
+    var c = Number(code);
+    if (c === 0) { return [isDay === false ? "bi-moon-stars" : "bi-sun", "Clear"]; }
+    if (c <= 2) { return [isDay === false ? "bi-cloud-moon" : "bi-cloud-sun", "Partly cloudy"]; }
+    if (c === 3) { return ["bi-cloud", "Overcast"]; }
+    if (c <= 48) { return ["bi-cloud-fog", "Fog"]; }
+    if (c <= 57) { return ["bi-cloud-drizzle", "Drizzle"]; }
+    if (c <= 67) { return ["bi-cloud-rain", "Rain"]; }
+    if (c <= 77) { return ["bi-cloud-snow", "Snow"]; }
+    if (c <= 82) { return ["bi-cloud-rain-heavy", "Showers"]; }
+    if (c <= 86) { return ["bi-cloud-snow", "Snow showers"]; }
+    return ["bi-cloud-lightning-rain", "Thunderstorm"];
+};
+
+/** Render temperature / forecast block on the clock. */
+WNP.renderWeather = function () {
+    if (!this.r.clockWeather) { return; }
+    var cfg = (this.d.serverSettings && this.d.serverSettings.features && this.d.serverSettings.features.weather) || {};
+    var w = this.d.weather;
+    if ((!cfg.enabled && !cfg.forecast) || !w || w.error) { this.r.clockWeather.innerHTML = ""; return; }
+    var html = "";
+    if (cfg.enabled) {
+        var ic = this.weatherIcon(w.code, w.isDay);
+        html += '<div class="wxNow"><i class="bi ' + ic[0] + '"></i><span class="wxTemp">' + w.temp + '°</span><span class="wxLabel">' + ic[1] + '</span></div>';
+    }
+    if (cfg.forecast && w.daily) {
+        html += '<div class="wxDays">' + w.daily.map(function (d) {
+            var di = WNP.weatherIcon(d.code, true);
+            var day = new Date(d.date + "T12:00:00").toLocaleDateString(WNP.clockLocale(), { weekday: "short" });
+            return '<div class="wxDay"><span class="wxDayName">' + day + '</span><i class="bi ' + di[0] + '"></i><span class="wxRange">' + d.tmax + '° <small>' + d.tmin + '°</small></span></div>';
+        }).join("") + '</div>';
+    }
+    this.r.clockWeather.innerHTML = html;
+};
+
+// ---- Seven-segment display (SVG). Digit cell 100x180, segment thickness 16.
+WNP.segMap = { "0": "abcdef", "1": "bc", "2": "abged", "3": "abgcd", "4": "fgbc", "5": "afgcd", "6": "afgedc", "7": "abc", "8": "abcdefg", "9": "abfgcd", "-": "g", " ": "", "°": "abfg" };
+WNP.segShapes = { // [x, y, w, h] within a 100x180 cell, horizontal segments get chamfered ends via polygon points
+    a: [10, 0, 80, 16], b: [84, 8, 16, 78], c: [84, 94, 16, 78], d: [10, 164, 80, 16], e: [0, 94, 16, 78], f: [0, 8, 16, 78], g: [10, 82, 80, 16]
+};
+WNP.segPoly = function (name, ox) {
+    var r = this.segShapes[name], x = r[0] + ox, y = r[1], w = r[2], h = r[3], k = 8;
+    if (w > h) { // horizontal: hexagon
+        return [[x + k, y], [x + w - k, y], [x + w, y + h / 2], [x + w - k, y + h], [x + k, y + h], [x, y + h / 2]];
+    }
+    return [[x + w / 2, y], [x + w, y + k], [x + w, y + h - k], [x + w / 2, y + h], [x, y + h - k], [x, y + k]];
+};
+/**
+ * Render a seven-segment time into #clockSeg.
+ * @param {string} main - e.g. "13:06" (colon or dot rendered by theme.separator)
+ * @param {object} theme - theme entry (separator, skew, ghost, ampm, aux)
+ * @param {string} tag - small text left of the digits (AM/PM) or ""
+ * @param {string} aux - small secondary readout right of the digits ("18°" / "16.09") or ""
+ */
+WNP.renderSegments = function (main, theme, tag, aux) {
+    var svg = this.r.clockSeg;
+    if (!svg) { return; }
+    var out = "", x = 0, ghost = theme.ghost || 0;
+    var cell = function (ch, ox, scale) {
+        var on = WNP.segMap[ch] || "";
+        var g = "";
+        ["a", "b", "c", "d", "e", "f", "g"].forEach(function (n) {
+            var pts = WNP.segPoly(n, 0).map(function (p) { return p[0] + "," + p[1]; }).join(" ");
+            var lit = on.indexOf(n) >= 0;
+            if (!lit && !ghost) { return; }
+            g += '<polygon points="' + pts + '" class="' + (lit ? "segOn" : "segOff") + '"' + (lit ? "" : ' style="opacity:' + ghost + '"') + '/>';
+        });
+        return '<g transform="translate(' + ox + ',' + (180 - 180 * scale) / 2 + ') scale(' + scale + ')">' + g + '</g>';
+    };
+    if (tag) { out += '<text class="segTag" x="0" y="60">' + tag + '</text>'; x += 60; }
+    for (var i = 0; i < main.length; i++) {
+        var ch = main[i];
+        if (ch === ":" || ".".indexOf(ch) >= 0) {
+            if (theme.separator === "dot") { out += '<circle class="segOn" cx="' + (x + 22) + '" cy="150" r="10"/>'; }
+            else { out += '<circle class="segOn" cx="' + (x + 22) + '" cy="60" r="9"/><circle class="segOn" cx="' + (x + 22) + '" cy="120" r="9"/>'; }
+            x += 44;
+            continue;
+        }
+        out += cell(ch, x, 1);
+        x += 122;
+    }
+    if (aux) {
+        x += 40;
+        for (var j = 0; j < aux.length; j++) {
+            var c2 = aux[j];
+            if (c2 === "." || c2 === ":") { out += '<circle class="segOn" cx="' + (x + 8) + '" cy="150" r="5"/>'; x += 20; continue; }
+            out += cell(c2, x, 0.5);
+            x += 62;
+        }
+    }
+    svg.setAttribute("viewBox", "-20 -12 " + (Math.max(500, x) + 40) + " 204");
+    svg.style.transform = theme.skew ? ("skewX(" + theme.skew + "deg)") : "";
+    svg.innerHTML = out;
+};
+
+// ---- Night shift (page-wide warm tint + dimming)
+WNP.nightShiftCfg = function () {
+    return (this.d.serverSettings && this.d.serverSettings.features && this.d.serverSettings.features.display && this.d.serverSettings.features.display.nightShift) || {};
+};
+
+/** Is the night-shift schedule active right now? */
+WNP.nightShiftActive = function (cfg) {
+    if (!cfg.enabled) { return false; }
+    if (cfg.schedule === "always") { return true; }
+    if (cfg.schedule === "custom") {
+        var toMin = function (t) { var p = (t || "00:00").split(":"); return (parseInt(p[0], 10) || 0) * 60 + (parseInt(p[1], 10) || 0); };
+        var now = new Date(), t = now.getHours() * 60 + now.getMinutes(), a = toMin(cfg.from), b = toMin(cfg.to);
+        return a <= b ? (t >= a && t < b) : (t >= a || t < b); // crosses midnight when from > to
+    }
+    return this.isNight(); // "sun"
+};
+
+/** Compute the overlay colour: warm tint (multiply blend) scaled by brightness. */
+WNP.nightShiftColor = function (warmth, brightness) {
+    var w = Math.max(0, Math.min(100, warmth)) / 100, b = Math.max(.2, Math.min(1, brightness / 100));
+    // 0 -> neutral white, 1 -> ~2400 K (255, 170, 100)
+    var r = 255, g = Math.round(255 - w * 85), bl = Math.round(255 - w * 155);
+    return "rgb(" + Math.round(r * b) + "," + Math.round(g * b) + "," + Math.round(bl * b) + ")";
+};
+
+WNP.applyNightShift = function (force) {
+    if (!this.r.wnpNightShift) { return; }
+    var cfg = this.nightShiftCfg();
+    var on = force !== undefined ? force : this.nightShiftActive(cfg);
+    var el = this.r.wnpNightShift;
+    if (!on) { el.style.opacity = "0"; return; }
+    el.style.background = this.nightShiftColor(cfg.warmth || 0, (typeof cfg.brightness === "number") ? cfg.brightness : 100);
+    el.style.opacity = "1";
+};
+
+/** Live preview while dragging the sliders, before the change event saves them. */
+WNP.previewNightShift = function () {
+    if (!this.r.wnpNightShift) { return; }
+    this.r.wnpNightShift.style.background = this.nightShiftColor(parseInt(this.r.nightShiftWarmth.value, 10) || 0, parseInt(this.r.nightShiftBrightness.value, 10) || 100);
+    this.r.wnpNightShift.style.opacity = "1";
+};
+
+/** Small clock over the now-playing view. */
+WNP.applyMiniClock = function () {
+    if (!this.r.wnpMiniClock) { return; }
+    var ov = this.clockCfg().overlay || {};
+    var el = this.r.wnpMiniClock;
+    el.className = (ov.enabled ? "" : "d-none ") + "pos-" + (ov.position || "top-right") + " size-" + (ov.size || "m");
+};
+
 /**
  * Start the clock overlay logic. Runs every second.
  * Shows the clock when nothing has been playing for features.clock.afterSeconds,
@@ -1179,7 +1719,7 @@ WNP.startClock = function () {
     var inputs = ["HDMI", "OPTICAL", "LINE-IN", "BLUETOOTH", "SPDIF"];
 
     var tick = function () {
-        var cfg = (self.d.serverSettings && self.d.serverSettings.features && self.d.serverSettings.features.clock) || {};
+        var cfg = self.clockCfg();
         var enabled = cfg.enabled !== false;
         var afterMs = ((typeof cfg.afterSeconds === "number") ? cfg.afterSeconds : 10) * 1000;
         var blankMs = ((typeof cfg.blankAfterMinutes === "number") ? cfg.blankAfterMinutes : 0) * 60000;
@@ -1191,44 +1731,106 @@ WNP.startClock = function () {
         var playing = transport === "PLAYING" || transport === "TRANSITIONING" || transport === "PAUSED_PLAYBACK";
         var now = Date.now();
 
-        // Something is playing and it is not a plain input (or inputs are allowed to count as playing)
         if (playing && !(onInput && cfg.onInput)) { self.d.lastPlayingMs = now; }
-        // An active input still counts as "activity" for the blanking timer
         var lastActivityMs = (playing && onInput) ? now : self.d.lastPlayingMs;
 
-        var showClock = enabled && (now - self.d.lastPlayingMs) >= afterMs;
+        var idleClock = enabled && (now - self.d.lastPlayingMs) >= afterMs;
+        if (self.d.manualClock && self.d.manualClockUntil && now >= self.d.manualClockUntil) { self.d.manualClock = false; }
+        if (idleClock) { self.d.manualClock = false; } // idle takes over; swipe state resets
+        var showClock = idleClock || self.d.manualClock;
         var blank = blankMs > 0 && (now - lastActivityMs) >= blankMs;
+        var trans = (cfg.swipe && cfg.swipe.transition) || "fade";
+        if (self.r.wnpClock.getAttribute("data-transition") !== trans) { self.r.wnpClock.setAttribute("data-transition", trans); }
 
-        // Time / date text
+        // Time / date
         var d = new Date();
         var hh = String(d.getHours()).padStart(2, "0"), mm = String(d.getMinutes()).padStart(2, "0");
-        self.r.clockTime.innerHTML = hh + '<span class="colon' + (d.getSeconds() % 2 ? ' dim' : '') + '">:</span>' + mm;
-        self.r.clockDate.innerText = d.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
+        var timeHtml = hh + '<span class="colon' + (d.getSeconds() % 2 ? ' dim' : '') + '">:</span>' + mm;
+        self.r.clockTime.innerHTML = timeHtml;
+        self.r.clockDate.innerText = d.toLocaleDateString(self.clockLocale(), { weekday: "long", day: "numeric", month: "long" });
         self.r.clockNote.innerText = (onInput && playing) ? ("TV audio via " + medium.toLowerCase()) : "";
+        if (self.r.wnpMiniClock) { self.r.wnpMiniClock.innerHTML = timeHtml; }
+
+        // Analog hands
+        if (self.r.wnpClock.getAttribute("data-kind") === "analog") {
+            var sec = d.getSeconds(), min = d.getMinutes() + sec / 60, hr = (d.getHours() % 12) + min / 60;
+            self.r.handSecond.setAttribute("transform", "rotate(" + (sec * 6) + " 100 100)");
+            self.r.handMinute.setAttribute("transform", "rotate(" + (min * 6) + " 100 100)");
+            self.r.handHour.setAttribute("transform", "rotate(" + (hr * 30) + " 100 100)");
+        }
+
+        // Seven-segment
+        if (self.r.wnpClock.getAttribute("data-kind") === "segment") {
+            var themeId = self.r.wnpClock.getAttribute("data-theme");
+            var th = self.clockThemes[themeId] || {};
+            var h24 = d.getHours(), tag = "";
+            var hh2 = hh;
+            if (th.ampm) { tag = h24 >= 12 ? "PM" : "AM"; hh2 = String(((h24 + 11) % 12) + 1).padStart(2, " "); }
+            var aux = "";
+            if (th.aux) {
+                var wxc = (self.d.serverSettings && self.d.serverSettings.features && self.d.serverSettings.features.weather) || {};
+                if (wxc.enabled && self.d.weather && !self.d.weather.error) { aux = String(self.d.weather.temp) + "°"; }
+                else { aux = String(d.getDate()).padStart(2, " ") + "." + String(d.getMonth() + 1).padStart(2, "0"); }
+            }
+            self.renderSegments(hh2 + ":" + mm, th, tag, aux);
+        }
+
+        self.applyClockTheme(); // handles day/night switching
+        self.applyNightShift(); // schedule may have flipped
 
         if (showClock !== self.d.clockVisible) {
             self.d.clockVisible = showClock;
-            self.r.wnpClock.classList.toggle("d-none", !showClock);
+            self.r.wnpClock.classList.toggle("visible", showClock);
             document.body.classList.toggle("wnp-clock-on", showClock);
         }
         document.body.classList.toggle("wnp-blank", blank);
     };
 
+    this.r.wnpClock.classList.remove("d-none"); // visibility is driven by .visible from here on
     if (this.d.clockTimer) { clearInterval(this.d.clockTimer); }
     this.d.clockTimer = setInterval(tick, 1000);
     tick();
 
-    // Drift: nudge the clock (and the whole page, slightly) every minute against OLED burn-in
+    // Drift: nudge the clock every minute against OLED burn-in
     if (this.d.driftTimer) { clearInterval(this.d.driftTimer); }
     this.d.driftTimer = setInterval(function () {
-        var cfg = (self.d.serverSettings && self.d.serverSettings.features && self.d.serverSettings.features.clock) || {};
+        var cfg = self.clockCfg();
         if (cfg.drift === false) {
             self.r.wnpClock.style.transform = "";
             return;
         }
         var x = Math.round((Math.random() - 0.5) * 40), y = Math.round((Math.random() - 0.5) * 40);
-        self.r.wnpClock.style.transform = "translate(" + x + "px, " + y + "px)";
+        self.r.wnpClock.style.setProperty("--drift", "translate(" + x + "px, " + y + "px)");
     }, 60000);
+
+    // Swipe to reveal / hide the clock while playing (touch or mouse drag)
+    var swipeCfg = function () { return self.clockCfg().swipe || {}; };
+    var inModal = function (el) { return el && el.closest && el.closest(".modal, .dropdown-menu, button, input, select, a"); };
+    document.addEventListener("pointerdown", function (e) {
+        if (!swipeCfg().enabled || inModal(e.target)) { self.d.swipeStart = null; return; }
+        self.d.swipeStart = { x: e.clientX, y: e.clientY, t: Date.now() };
+    }, { passive: true });
+    document.addEventListener("pointerup", function (e) {
+        var st = self.d.swipeStart; self.d.swipeStart = null;
+        var cfg = swipeCfg();
+        if (!st || !cfg.enabled) { return; }
+        var dx = e.clientX - st.x, dy = e.clientY - st.y;
+        var isSwipe = Math.abs(dx) > 80 && Math.abs(dy) < 80 && (Date.now() - st.t) < 800;
+        var isTap = Math.abs(dx) < 10 && Math.abs(dy) < 10;
+        var dir = dx < 0 ? "left" : "right";
+        if (self.d.manualClock) {
+            // Return: opposite swipe, or a tap on the clock
+            var opposite = cfg.gesture === "any" || dir !== cfg.gesture;
+            if ((isSwipe && opposite) || isTap) { self.d.manualClock = false; }
+            return;
+        }
+        if (self.d.clockVisible) { return; } // idle clock: nothing to do
+        if (isSwipe && (cfg.gesture === "any" || dir === cfg.gesture)) {
+            self.d.manualClock = true;
+            var ret = (typeof cfg.returnAfterSeconds === "number") ? cfg.returnAfterSeconds : 30;
+            self.d.manualClockUntil = ret > 0 ? Date.now() + ret * 1000 : 0;
+        }
+    }, { passive: true });
 };
 
 /**
