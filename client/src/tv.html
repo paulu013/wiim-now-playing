@@ -54,7 +54,7 @@
                     </svg>
                 </div>
                 <div class="clockSegment">
-                    <svg id="clockSeg" viewBox="0 0 1000 220" xmlns="http://www.w3.org/2000/svg"></svg>
+                    <div id="clockSeg"><span class="segMain">88:88</span></div>
                 </div>
                 <div id="clockWeather" class="clockWeather"></div>
             </div>
@@ -64,6 +64,9 @@
         <div id="wnpNightShift"></div>
         <!-- Small clock over the now-playing view (Settings > Display) -->
         <div id="wnpMiniClock" class="d-none pos-top-right size-m">--:--</div>
+
+        <!-- Backdrop-hero artwork for Plex/Jellyfin video (Settings > Sources > Artwork) -->
+        <div id="wnpHero"><img id="wnpHeroImg" alt=""><img id="wnpHeroLogo" class="d-none" alt=""></div>
 
         <div class="wnpContainer">
 

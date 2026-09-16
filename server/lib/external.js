@@ -21,6 +21,7 @@ const DEFAULTS = {
     enabled: true,
     priority: "wiim",
     pollMs: 2000,
+    artwork: "backdrop", // "backdrop" (full-screen hero + logo) | "poster" | "still"
     plex: { url: "", token: "", players: [] },
     jellyfin: { url: "", apiKey: "", players: [] }
 };
@@ -75,7 +76,7 @@ const fetchJson = async (url, headers, timeoutMs = 4000) => {
 
 // ---------------------------------------------------------------- Plex
 
-const pollPlex = async (cfg) => {
+const pollPlex = async (cfg, artwork) => {
     if (!cfg.url || !cfg.token) return null;
     const base = cfg.url.replace(/\/$/, "");
     let items;
@@ -98,7 +99,16 @@ const pollPlex = async (cfg) => {
     }
     if (!best) return null;
     const media = (best.Media && best.Media[0]) || {};
-    const thumb = best.thumb || best.parentThumb || best.grandparentThumb;
+    const isEp = best.type === "episode";
+    const img = (path) => path ? `${base}${path}?X-Plex-Token=${encodeURIComponent(cfg.token)}` : "";
+    // Pick artwork per the chosen style (see DEFAULTS.artwork).
+    const poster = isEp ? (best.grandparentThumb || best.parentThumb || best.thumb) : best.thumb;
+    let artPath;
+    if (artwork === "still") { artPath = best.thumb || poster; }
+    else if (artwork === "backdrop") { artPath = best.art || best.grandparentArt || poster; }
+    else { artPath = poster; } // poster (default fallback)
+    const logoObj = (best.Image || []).find(i => i.type === "clearLogo");
+    const logo = logoObj ? img(logoObj.url) : "";
 
     // Map to the music-shaped now-playing fields per content type.
     let title = best.title || "", artist = "", album = "", year = null;
@@ -116,9 +126,12 @@ const pollPlex = async (cfg) => {
     }
     return {
         source: "Plex",
+        kind: best.type, // track | movie | episode | clip
+        controlId: (best.Player && best.Player.machineIdentifier) || "", // target client for remote play/pause
         state: best.Player.state === "playing" ? "PLAYING" : "PAUSED_PLAYBACK",
         title, artist, album, year,
-        art: thumb ? `${base}${thumb}?X-Plex-Token=${encodeURIComponent(cfg.token)}` : "",
+        art: img(artPath),
+        logo, artwork: artwork || "poster",
         position: (best.viewOffset || 0) / 1000,
         duration: (best.duration || 0) / 1000,
         player: best.Player.title || "",
@@ -132,7 +145,7 @@ const pollPlex = async (cfg) => {
 
 // ---------------------------------------------------------------- Jellyfin
 
-const pollJellyfin = async (cfg) => {
+const pollJellyfin = async (cfg, artwork) => {
     if (!cfg.url || !cfg.apiKey) return null;
     const base = cfg.url.replace(/\/$/, "");
     let sessions;
@@ -157,8 +170,20 @@ const pollJellyfin = async (cfg) => {
     const item = best.NowPlayingItem;
     const ps = best.PlayState || {};
     const isEpisode = item.Type === "Episode";
-    const imgId = (isEpisode ? item.SeriesId : item.AlbumId) || item.Id;
     const stream = (item.MediaStreams || []).find(m => m.Type === "Audio") || {};
+
+    // Pick artwork per the chosen style (Jellyfin image endpoints need no auth).
+    const posterId = (isEpisode ? item.SeriesId : item.AlbumId) || item.Id; // series/movie/album poster
+    const backdropId = (isEpisode ? item.SeriesId : item.Id) || item.Id;    // series/movie backdrop
+    const jimg = (id, type, extra) => id ? `${base}/Items/${id}/Images/${type}?${extra || "fillHeight=1400"}` : "";
+    let art;
+    if (artwork === "still") { art = jimg(item.Id, "Primary"); }             // episode's own image = still
+    else if (artwork === "backdrop") { art = jimg(backdropId, "Backdrop/0", "fillWidth=2000") || jimg(posterId, "Primary"); }
+    else { art = jimg(posterId, "Primary"); }                               // poster
+    // Clear logo (series logo for episodes, item logo for movies) if present.
+    let logo = "";
+    if (isEpisode && item.ParentLogoItemId) { logo = jimg(item.ParentLogoItemId, "Logo", "fillHeight=400"); }
+    else if (item.ImageTags && item.ImageTags.Logo) { logo = jimg(item.Id, "Logo", "fillHeight=400"); }
 
     // Map to the music-shaped now-playing fields per content type.
     let title = item.Name || "", artist = "", album = "", year = null;
@@ -176,9 +201,12 @@ const pollJellyfin = async (cfg) => {
     }
     return {
         source: "Jellyfin",
+        kind: isEpisode ? "episode" : ((item.Type === "Audio" || item.Type === "MusicVideo") ? "track" : "movie"),
+        controlId: best.Id || "", // session id for remote play/pause
         state: ps.IsPaused ? "PAUSED_PLAYBACK" : "PLAYING",
         title, artist, album, year,
-        art: imgId ? `${base}/Items/${imgId}/Images/Primary?maxHeight=1400` : "",
+        art,
+        logo, artwork: artwork || "poster",
         position: (ps.PositionTicks || 0) / 1e7,
         duration: (item.RunTimeTicks || 0) / 1e7,
         player: best.DeviceName || "",
@@ -207,7 +235,11 @@ const toMetadata = (s) => {
             "song:rate_hz": s.sampleRate || "",
             "song:quality": "",
             "song:actualQuality": s.codec || "", // e.g. FLAC, ALAC, MP3 -> quality badge
-            "wnp:rating": s.rating || ""
+            "wnp:rating": s.rating || "",
+            "wnp:kind": s.kind || "", // track | movie | episode | clip -> client hides audio-quality for video
+            "wnp:logo": s.logo || "", // clear title logo (for the backdrop-hero layout)
+            "wnp:artwork": s.artwork || "poster" // backdrop | poster | still -> client picks the layout
+
         },
         RelTime: hms(s.position),
         TrackDuration: hms(s.duration),
@@ -254,11 +286,38 @@ const shouldOverride = (deviceInfo, serverSettings) => {
 
 const getCurrent = () => current;
 
+/**
+ * Send a transport command to the current external session's player.
+ * @param {object} serverSettings
+ * @param {string} action - "Play" | "Pause" | "Stop"
+ * Plex control is best-effort (needs the client's Plex Companion / "advertise as
+ * player" enabled); Jellyfin uses the documented Sessions command API.
+ */
+const control = async (serverSettings, action) => {
+    if (!current || !current.controlId) { log("control: no controllable session"); return; }
+    const cfg = getConfig(serverSettings);
+    try {
+        if (current.source === "Plex") {
+            const base = cfg.plex.url.replace(/\/$/, "");
+            const cmd = { Play: "play", Pause: "pause", Stop: "stop" }[action] || "playPause";
+            const url = `${base}/player/playback/${cmd}?X-Plex-Token=${encodeURIComponent(cfg.plex.token)}`
+                + `&X-Plex-Target-Client-Identifier=${encodeURIComponent(current.controlId)}&commandID=1`;
+            await fetch(url, { headers: { "X-Plex-Client-Identifier": "wiim-now-playing", "X-Plex-Device-Name": "WNP", Accept: "application/json" } });
+        } else if (current.source === "Jellyfin") {
+            const base = cfg.jellyfin.url.replace(/\/$/, "");
+            const cmd = { Play: "Unpause", Pause: "Pause", Stop: "Stop" }[action] || "PlayPause";
+            await fetch(`${base}/Sessions/${encodeURIComponent(current.controlId)}/Playing/${cmd}`, {
+                method: "POST", headers: { Authorization: `MediaBrowser Token="${cfg.jellyfin.apiKey}"` }
+            });
+        }
+    } catch (e) { log("control failed:", e.message); }
+};
+
 /** One poll of all configured sources; emits if the outcome changed what should be shown. */
 const poll = async (io, deviceInfo, serverSettings) => {
     const cfg = getConfig(serverSettings);
     if (!cfg.enabled) { current = null; return; }
-    const [plex, jf] = await Promise.all([pollPlex(cfg.plex), pollJellyfin(cfg.jellyfin)]);
+    const [plex, jf] = await Promise.all([pollPlex(cfg.plex, cfg.artwork), pollJellyfin(cfg.jellyfin, cfg.artwork)]);
     const cands = [plex, jf].filter(Boolean);
     const next = cands.find(c => c.state === "PLAYING") || cands[0] || null;
 
@@ -274,7 +333,16 @@ const poll = async (io, deviceInfo, serverSettings) => {
     else if (wasOverriding) {
         // Hand back to the device immediately rather than waiting for its next poll.
         if (deviceInfo.metadata) io.emit("metadata", deviceInfo.metadata);
-        if (deviceInfo.state) io.emit("state", deviceInfo.state);
+        if (deviceInfo.state) { io.emit("state", deviceInfo.state); }
+        else {
+            // No device configured: tell the UI the session ended so it goes idle
+            // (clock returns) instead of freezing on the last external frame.
+            io.emit("state", {
+                CurrentTransportState: "STOPPED", CurrentTransportStatus: "OK", CurrentSpeed: "1",
+                RelTime: "00:00:00", TrackDuration: "00:00:00", PlayMedium: "",
+                external: true, stateTimeStamp: lib.getTimeStamp()
+            });
+        }
     }
 };
 
@@ -323,4 +391,4 @@ const currentMessages = (deviceInfo, serverSettings) => {
     return { metadata: deviceInfo.metadata, state: deviceInfo.state };
 };
 
-module.exports = { DEFAULTS, getConfig, shouldOverride, getCurrent, poll, start, stop, wrapIo, currentMessages };
+module.exports = { DEFAULTS, getConfig, shouldOverride, getCurrent, control, poll, start, stop, wrapIo, currentMessages };

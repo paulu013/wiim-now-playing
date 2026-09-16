@@ -16,12 +16,13 @@ WNP.s = {
     aServerUI: ["btnReboot", "btnUpdate", "btnShutdown", "btnReloadUI", "sServerUrlHostname", "sServerUrlIP", "sServerVersion", "sClientVersion", "chkLyricsEnabled", "lyricsCacheSize", "btnClearLyricsCache", "lyricsOffsetMs",
         "wnpClock", "clockTime", "clockDate", "clockNote", "clockWeather", "clockDial", "dialTicks", "dialNumbers", "dialBrand", "dialSub", "handHour", "handMinute", "handSecond", "clockSeg", "wnpMiniClock",
         "chkClockEnabled", "chkClockOnInput", "chkClockDrift", "clockAfterSeconds", "clockBlankAfterMinutes",
-        "selClockTheme", "selClockNightTheme", "chkClockAutoDayNight", "clockDialBrand", "clockDialSub", "segSkew", "segSkewValue",
+        "selClockTheme", "selClockNightTheme", "chkClockAutoDayNight", "clockDialBrand", "clockDialSub", "chkSegSlant",
         "chkClockOverride", "selClockFont", "selClockColors", "btnApplyPreset", "btnResetColors", "colorRoles", "chkClockGradient", "clockBaseColor", "selClockScheme", "btnApplyScheme", "clockNightDim", "clockNightDimValue", "chkOverlayEnabled", "selOverlayPosition", "selOverlaySize",
-        "chkWeatherTemp", "chkWeatherForecast", "weatherLocation", "selWeatherUnits", "weatherStatus",
+        "chkWeatherTemp", "chkWeatherForecast", "chkWeatherLabel", "weatherLocation", "selWeatherUnits", "weatherStatus",
         "selClockLocale", "chkSwipeEnabled", "selSwipeGesture", "selSwipeTransition", "swipeReturnSeconds",
         "wnpNightShift", "chkNightShift", "selNightShiftSchedule", "nightShiftFrom", "nightShiftTo", "nightShiftWarmth", "nightShiftWarmthValue", "nightShiftBrightness", "nightShiftBrightnessValue",
-        "chkExternalEnabled", "selExternalPriority", "plexUrl", "plexToken", "plexPlayers", "jellyfinUrl", "jellyfinApiKey", "jellyfinPlayers", "btnSaveSources"],
+        "chkExternalEnabled", "selExternalPriority", "selExternalArtwork", "plexUrl", "plexToken", "plexPlayers", "jellyfinUrl", "jellyfinApiKey", "jellyfinPlayers", "btnSaveSources",
+        "wnpHero", "wnpHeroImg", "wnpHeroLogo"],
     // Default timeout for alerts in ms
     alertTimeoutMs: 5000
 };
@@ -50,7 +51,9 @@ WNP.d = {
     loadedFonts: {}, // Google Fonts already injected
     manualClock: false, // Clock revealed by swipe
     manualClockUntil: 0, // ...and auto-return deadline (ms epoch, 0 = stay)
-    swipeStart: null // Pointer start for swipe detection
+    swipeStart: null, // Pointer start for swipe detection
+    cachedClockCfg: null, // Last-known clock config (from localStorage) used before server-settings arrives
+    isExternal: false // Whether the current session is a Plex/Jellyfin source (routes play/pause, hides N/A controls)
 };
 
 // Reference placeholders.
@@ -77,6 +80,11 @@ WNP.Init = function () {
 
     // Set UI event listeners
     this.setUIListeners();
+
+    // Restore the last-known clock config so the correct theme/locale render on the
+    // very first frame, before server-settings arrives (avoids a default-theme /
+    // English flash on load). Refreshed whenever server-settings is received. (fork)
+    try { this.d.cachedClockCfg = JSON.parse(window.localStorage.getItem("wnpClockCfg")); } catch (e) { this.d.cachedClockCfg = null; }
 
     // Clock overlay (see Settings > Display)
     this.startClock();
@@ -140,12 +148,13 @@ WNP.setUIListeners = function () {
         }
     });
 
-    // Play/Pause/Stop button
+    // Play/Pause/Stop button — routed to the external source for Plex/Jellyfin
+    // sessions, otherwise to the WiiM device. (fork)
     this.r.btnPlay.addEventListener("click", function () {
         var wnpAction = this.getAttribute("wnp-action");
         if (wnpAction) {
             this.disabled = true;
-            socket.emit("device-action", wnpAction);
+            socket.emit(WNP.d.isExternal ? "external-action" : "device-action", wnpAction);
         }
     });
 
@@ -221,8 +230,11 @@ WNP.setUIListeners = function () {
     // Clock + weather settings: any change re-sends the whole block
     this.fillClockSelects();
     var clockInputs = ["chkClockEnabled", "chkClockOnInput", "chkClockDrift", "clockAfterSeconds", "clockBlankAfterMinutes",
-        "selClockTheme", "selClockNightTheme", "chkClockAutoDayNight", "clockDialBrand", "clockDialSub", "segSkew", "segSkewValue",
-        "chkClockOverride", "selClockFont", "selClockColors", "btnApplyPreset", "btnResetColors", "colorRoles", "chkClockGradient", "clockBaseColor", "selClockScheme", "btnApplyScheme", "clockNightDim", "clockNightDimValue", "chkOverlayEnabled", "selOverlayPosition", "selOverlaySize",
+        "selClockTheme", "selClockNightTheme", "chkClockAutoDayNight", "clockDialBrand", "clockDialSub", "chkSegSlant",
+        // NB: clockBaseColor / selClockScheme are deliberately NOT here — they only
+        // take effect via the "Apply scheme" button. Auto-emitting on their change
+        // round-trips settings that don't carry base/scheme, reverting the pick. (fork)
+        "chkClockOverride", "selClockFont", "selClockColors", "btnApplyPreset", "btnResetColors", "colorRoles", "chkClockGradient", "btnApplyScheme", "clockNightDim", "clockNightDimValue", "chkOverlayEnabled", "selOverlayPosition", "selOverlaySize",
         "selClockLocale", "chkSwipeEnabled", "selSwipeGesture", "selSwipeTransition", "swipeReturnSeconds"];
     clockInputs.forEach(function (id) {
         if (!WNP.r[id]) { return; }
@@ -261,7 +273,7 @@ WNP.setUIListeners = function () {
         this.r.nightShiftBrightness.addEventListener("input", function () { WNP.r.nightShiftBrightnessValue.innerText = this.value; WNP.previewNightShift(); });
     }
 
-    ["chkWeatherTemp", "chkWeatherForecast", "weatherLocation", "selWeatherUnits"].forEach(function (id) {
+    ["chkWeatherTemp", "chkWeatherForecast", "chkWeatherLabel", "weatherLocation", "selWeatherUnits"].forEach(function (id) {
         if (!WNP.r[id]) { return; }
         WNP.r[id].addEventListener("change", function () {
             socket.emit("features-settings", {
@@ -269,6 +281,7 @@ WNP.setUIListeners = function () {
                     weather: {
                         enabled: WNP.r.chkWeatherTemp.checked,
                         forecast: WNP.r.chkWeatherForecast.checked,
+                        showLabel: WNP.r.chkWeatherLabel.checked,
                         location: WNP.r.weatherLocation.value.trim(),
                         units: WNP.r.selWeatherUnits.value
                     }
@@ -285,6 +298,7 @@ WNP.setUIListeners = function () {
                     external: {
                         enabled: WNP.r.chkExternalEnabled.checked,
                         priority: WNP.r.selExternalPriority.value,
+                        artwork: WNP.r.selExternalArtwork.value,
                         plex: { url: WNP.r.plexUrl.value.trim(), token: WNP.r.plexToken.value.trim(), players: WNP.r.plexPlayers.value },
                         jellyfin: { url: WNP.r.jellyfinUrl.value.trim(), apiKey: WNP.r.jellyfinApiKey.value.trim(), players: WNP.r.jellyfinPlayers.value }
                     }
@@ -359,6 +373,12 @@ WNP.setSocketDefinitions = function () {
         // Store server settings
         WNP.d.serverSettings = msg;
 
+        // Cache the clock config so the next load paints the right theme/locale
+        // immediately (see WNP.d.cachedClockCfg / clockCfg). (fork)
+        if (msg && msg.features && msg.features.clock) {
+            try { window.localStorage.setItem("wnpClockCfg", JSON.stringify(msg.features.clock)); } catch (e) { /* storage unavailable */ }
+        }
+
         // RPi has bash, so possibly able to reboot/shutdown.
         if (msg && msg.os && msg.os.userInfo && msg.os.userInfo.shell === "/bin/bash") {
             WNP.r.btnReboot.disabled = false;
@@ -419,9 +439,8 @@ WNP.setSocketDefinitions = function () {
             WNP.r.chkClockAutoDayNight.checked = Boolean(clk.autoDayNight);
             WNP.r.clockDialBrand.value = (clk.dialText && clk.dialText.brand) || "";
             WNP.r.clockDialSub.value = (clk.dialText && clk.dialText.sub) || "";
-            if (WNP.r.segSkew) {
-                WNP.r.segSkew.value = (typeof clk.segmentSkew === "number") ? clk.segmentSkew : -8;
-                WNP.r.segSkewValue.innerText = WNP.r.segSkew.value;
+            if (WNP.r.chkSegSlant) {
+                WNP.r.chkSegSlant.checked = clk.segmentSlant !== false; // default slanted
             }
             WNP.r.chkClockOverride.checked = Boolean(clk.override && clk.override.enabled);
             WNP.r.selClockFont.value = (clk.override && clk.override.font) || "";
@@ -466,6 +485,7 @@ WNP.setSocketDefinitions = function () {
         if (WNP.r.chkWeatherTemp) {
             WNP.r.chkWeatherTemp.checked = Boolean(wx.enabled);
             WNP.r.chkWeatherForecast.checked = Boolean(wx.forecast);
+            if (WNP.r.chkWeatherLabel) { WNP.r.chkWeatherLabel.checked = wx.showLabel !== false; } // default on
             WNP.r.weatherLocation.value = wx.location || "";
             WNP.r.selWeatherUnits.value = wx.units || "metric";
             WNP.r.weatherStatus.innerText = wx.name ? ("Resolved to: " + wx.name) : (wx.location ? "Resolving location..." : "");
@@ -473,12 +493,14 @@ WNP.setSocketDefinitions = function () {
         WNP.d.appliedTheme = null; // Re-apply theme with the new settings
         WNP.applyClockTheme();
         WNP.applyMiniClock();
+        WNP.renderWeather(); // weather may have arrived before settings; (re)render now that we know if it's enabled
 
         // External sources settings
         var ext = (msg && msg.features && msg.features.external) ? msg.features.external : {};
         if (WNP.r.chkExternalEnabled) {
             WNP.r.chkExternalEnabled.checked = ext.enabled !== false;
             WNP.r.selExternalPriority.value = ext.priority || "wiim";
+            if (WNP.r.selExternalArtwork) { WNP.r.selExternalArtwork.value = ext.artwork || "backdrop"; }
             WNP.r.plexUrl.value = (ext.plex && ext.plex.url) || "";
             WNP.r.plexToken.value = (ext.plex && ext.plex.token) || "";
             WNP.r.plexPlayers.value = (ext.plex && ext.plex.players) ? [].concat(ext.plex.players).join(", ") : "";
@@ -657,6 +679,13 @@ WNP.setSocketDefinitions = function () {
             WNP.r.btnNext.disabled = false;
         }
 
+        // External (Plex/Jellyfin) session: shuffle/prev/next/repeat don't apply, so
+        // hide them; play/pause stays and is routed to the external source. (fork)
+        WNP.d.isExternal = Boolean(msg.external);
+        [WNP.r.btnShuffle, WNP.r.btnPrev, WNP.r.btnNext, WNP.r.btnRepeat].forEach(function (btn) {
+            if (btn) { btn.classList.toggle("d-none", WNP.d.isExternal); }
+        });
+
     });
 
     // On metadata
@@ -697,7 +726,12 @@ WNP.setSocketDefinitions = function () {
             WNP.r.mediaTitle.innerText = "No Music Selected";
         }
 
-        // Audio quality
+        // Audio quality — not meaningful for video (Plex/Jellyfin movies & episodes),
+        // so hide the whole kbps/bits/kHz line for those. (fork)
+        var mediaKind = (msg.trackMetaData && msg.trackMetaData["wnp:kind"]) ? msg.trackMetaData["wnp:kind"] : "";
+        var isVideo = ["movie", "episode", "video", "clip"].indexOf(mediaKind) >= 0;
+        var mediaQualityEl = document.getElementById("mediaQuality");
+        if (mediaQualityEl) { mediaQualityEl.style.display = isVideo ? "none" : ""; }
         var songBitrate = (msg.trackMetaData && msg.trackMetaData["song:bitrate"]) ? msg.trackMetaData["song:bitrate"] : "";
         var songBitDepth = (msg.trackMetaData && msg.trackMetaData["song:format_s"]) ? msg.trackMetaData["song:format_s"] : "";
         var songSampleRate = (msg.trackMetaData && msg.trackMetaData["song:rate_hz"]) ? msg.trackMetaData["song:rate_hz"] : "";
@@ -742,6 +776,20 @@ WNP.setSocketDefinitions = function () {
         }
         if (trackChanged && currentAlbumArt != albumArtUri) {
             WNP.setAlbumArt(albumArtUri);
+        }
+
+        // Backdrop-hero artwork: full-screen fanart behind the now-playing view with an
+        // optional clear logo (Plex/Jellyfin video, Settings > Sources > Artwork). (fork)
+        var artMode = (msg.trackMetaData && msg.trackMetaData["wnp:artwork"]) || "";
+        var heroLogo = (msg.trackMetaData && msg.trackMetaData["wnp:logo"]) || "";
+        var heroOn = artMode === "backdrop" && Boolean(albumArtUri) && WNP.r.wnpHero;
+        document.body.classList.toggle("wnp-hero", Boolean(heroOn));
+        // Only (re)set the backdrop/logo on a track change or when empty — the https
+        // art URL carries a changing cache-buster, so setting it every tick would flicker.
+        if (heroOn && (trackChanged || !WNP.r.wnpHeroImg.getAttribute("src"))) {
+            WNP.r.wnpHeroImg.src = albumArtUri;
+            if (heroLogo) { WNP.r.wnpHeroLogo.src = heroLogo; WNP.r.wnpHeroLogo.classList.remove("d-none"); }
+            else { WNP.r.wnpHeroLogo.removeAttribute("src"); WNP.r.wnpHeroLogo.classList.add("d-none"); }
         }
 
         // Device volume
@@ -1304,8 +1352,8 @@ WNP.clockThemes = {
     "analog-bauhaus": { name: "Analog – bauhaus", kind: "analog", font: "DM Sans", colors: "bauhaus", dial: true, numerals: "none" },
     "analog-night": { name: "Analog – night dial", kind: "analog", font: "Manrope", colors: "lume", dial: true, numerals: "quarters" },
     "analog-alarm": { name: "Analog – white alarm clock", kind: "analog", font: "DM Sans", colors: "alarm", dial: true, numerals: "arabic", brandY: 58, subY: 68 },
-    "segment-bedside": { name: "Seven-segment – bedside", kind: "segment", font: "", colors: "vfd", dial: false, separator: "dot", skew: -8, ghost: 0 },
-    "segment-alarm": { name: "Seven-segment – alarm clock", kind: "segment", font: "", colors: "lcd", dial: false, separator: "colon", skew: 0, ghost: 0.06, ampm: true, aux: true }
+    "segment-bedside": { name: "Seven-segment – bedside", kind: "segment", font: "", colors: "vfd", dial: false, ghost: 0.08 },
+    "segment-alarm": { name: "Seven-segment – alarm clock", kind: "segment", font: "", colors: "lcd", dial: false, ghost: 0.12, ampm: true }
 };
 
 /** Colour roles on the clock. Every preset defines all of them; a theme picks a preset as its defaults. */
@@ -1423,17 +1471,6 @@ WNP.fillClockSelects = function () {
     this.r.chkClockGradient.addEventListener("change", function () { self.emitClockSettings(); });
     this.r.clockNightDim.addEventListener("input", function () { self.r.clockNightDimValue.innerText = this.value; });
     this.r.clockNightDim.addEventListener("change", function () { self.emitClockSettings(); });
-    if (this.r.segSkew) {
-        // Live slant preview: update the label, keep the in-memory setting in sync so the
-        // next segment render uses it, and tilt the current display immediately.
-        this.r.segSkew.addEventListener("input", function () {
-            self.r.segSkewValue.innerText = this.value;
-            if (self.d.serverSettings && self.d.serverSettings.features && self.d.serverSettings.features.clock) {
-                self.d.serverSettings.features.clock.segmentSkew = parseInt(this.value, 10);
-            }
-            if (self.r.clockSeg) { self.r.clockSeg.style.transform = "skewX(" + parseInt(this.value, 10) + "deg)"; }
-        });
-    }
 };
 
 /** Set one role's custom colour (null = back to theme default) and save. */
@@ -1471,7 +1508,7 @@ WNP.emitClockSettings = function () {
                 theme: this.r.selClockTheme.value,
                 nightTheme: this.r.selClockNightTheme.value,
                 autoDayNight: this.r.chkClockAutoDayNight.checked,
-                segmentSkew: this.r.segSkew ? parseInt(this.r.segSkew.value, 10) : -8,
+                segmentSlant: this.r.chkSegSlant ? this.r.chkSegSlant.checked : true,
                 dialText: { brand: this.r.clockDialBrand.value.trim(), sub: this.r.clockDialSub.value.trim() },
                 override: { enabled: this.r.chkClockOverride.checked, font: this.r.selClockFont.value },
                 colors: {
@@ -1493,7 +1530,10 @@ WNP.clockLocale = function () {
 };
 
 WNP.clockCfg = function () {
-    return (this.d.serverSettings && this.d.serverSettings.features && this.d.serverSettings.features.clock) || {};
+    if (this.d.serverSettings && this.d.serverSettings.features && this.d.serverSettings.features.clock) {
+        return this.d.serverSettings.features.clock;
+    }
+    return this.d.cachedClockCfg || {}; // before server-settings arrives, use the cached config
 };
 
 /** Load a Google Font once. Falls back silently to system fonts when offline. */
@@ -1605,6 +1645,27 @@ WNP.weatherIcon = function (code, isDay) {
     return ["bi-cloud-lightning-rain", "Thunderstorm"];
 };
 
+/** Weather condition labels per supported clock language (en is the key itself). */
+WNP.wxLabels = {
+    "Clear": { nl: "Helder", de: "Klar", fr: "Dégagé" },
+    "Partly cloudy": { nl: "Half bewolkt", de: "Teils bewölkt", fr: "Partiellement nuageux" },
+    "Overcast": { nl: "Bewolkt", de: "Bedeckt", fr: "Couvert" },
+    "Fog": { nl: "Mist", de: "Nebel", fr: "Brouillard" },
+    "Drizzle": { nl: "Motregen", de: "Nieselregen", fr: "Bruine" },
+    "Rain": { nl: "Regen", de: "Regen", fr: "Pluie" },
+    "Snow": { nl: "Sneeuw", de: "Schnee", fr: "Neige" },
+    "Showers": { nl: "Buien", de: "Schauer", fr: "Averses" },
+    "Snow showers": { nl: "Sneeuwbuien", de: "Schneeschauer", fr: "Averses de neige" },
+    "Thunderstorm": { nl: "Onweer", de: "Gewitter", fr: "Orage" }
+};
+
+/** Translate an English condition label to the configured clock language. */
+WNP.wxLabel = function (label) {
+    var lang = (this.clockLocale() || "en").split("-")[0];
+    var t = this.wxLabels[label];
+    return (t && t[lang]) || label;
+};
+
 /** Render temperature / forecast block on the clock. */
 WNP.renderWeather = function () {
     if (!this.r.clockWeather) { return; }
@@ -1614,7 +1675,8 @@ WNP.renderWeather = function () {
     var html = "";
     if (cfg.enabled) {
         var ic = this.weatherIcon(w.code, w.isDay);
-        html += '<div class="wxNow"><i class="bi ' + ic[0] + '"></i><span class="wxTemp">' + w.temp + '°</span><span class="wxLabel">' + ic[1] + '</span></div>';
+        var wxLabelHtml = (cfg.showLabel !== false) ? '<span class="wxLabel">' + this.wxLabel(ic[1]) + '</span>' : '';
+        html += '<div class="wxNow"><i class="bi ' + ic[0] + '"></i><span class="wxTemp">' + w.temp + '°</span>' + wxLabelHtml + '</div>';
     }
     if (cfg.forecast && w.daily) {
         html += '<div class="wxDays">' + w.daily.map(function (d) {
@@ -1626,66 +1688,28 @@ WNP.renderWeather = function () {
     this.r.clockWeather.innerHTML = html;
 };
 
-// ---- Seven-segment display (SVG). Digit cell 100x180, segment thickness 16.
-WNP.segMap = { "0": "abcdef", "1": "bc", "2": "abged", "3": "abgcd", "4": "fgbc", "5": "afgcd", "6": "afgedc", "7": "abc", "8": "abcdefg", "9": "abfgcd", "-": "g", " ": "", "°": "abfg" };
-WNP.segShapes = { // [x, y, w, h] within a 100x180 cell, horizontal segments get chamfered ends via polygon points
-    a: [10, 0, 80, 16], b: [84, 8, 16, 78], c: [84, 94, 16, 78], d: [10, 164, 80, 16], e: [0, 94, 16, 78], f: [0, 8, 16, 78], g: [10, 82, 80, 16]
-};
-WNP.segPoly = function (name, ox) {
-    var r = this.segShapes[name], x = r[0] + ox, y = r[1], w = r[2], h = r[3], k = 8;
-    if (w > h) { // horizontal: hexagon
-        return [[x + k, y], [x + w - k, y], [x + w, y + h / 2], [x + w - k, y + h], [x + k, y + h], [x, y + h / 2]];
-    }
-    return [[x + w / 2, y], [x + w, y + k], [x + w, y + h - k], [x + w / 2, y + h], [x, y + h - k], [x, y + k]];
-};
+// ---- Seven-segment display (DSEG font, bundled in client/src/fonts).
 /**
- * Render a seven-segment time into #clockSeg.
- * @param {string} main - e.g. "13:06" (colon or dot rendered by theme.separator)
- * @param {object} theme - theme entry (separator, skew, ghost, ampm, aux)
- * @param {string} tag - small text left of the digits (AM/PM) or ""
- * @param {string} aux - small secondary readout right of the digits ("18°" / "16.09") or ""
+ * Render a seven-segment time into #clockSeg using the DSEG7 Classic font.
+ * A faint "ghost" layer (all segments lit) sits behind the time for themes that
+ * ask for it; the slant is the italic DSEG face, toggled by features.clock.segmentSlant.
+ * @param {string} main - e.g. "13:06"
+ * @param {object} theme - theme entry (ghost, ampm)
+ * @param {string} tag - small text before the digits (AM/PM) or ""
  */
-WNP.renderSegments = function (main, theme, tag, aux) {
-    var svg = this.r.clockSeg;
-    if (!svg) { return; }
-    var out = "", x = 0, ghost = theme.ghost || 0;
-    var cell = function (ch, ox, scale) {
-        var on = WNP.segMap[ch] || "";
-        var g = "";
-        ["a", "b", "c", "d", "e", "f", "g"].forEach(function (n) {
-            var pts = WNP.segPoly(n, 0).map(function (p) { return p[0] + "," + p[1]; }).join(" ");
-            var lit = on.indexOf(n) >= 0;
-            if (!lit && !ghost) { return; }
-            g += '<polygon points="' + pts + '" class="' + (lit ? "segOn" : "segOff") + '"' + (lit ? "" : ' style="opacity:' + ghost + '"') + '/>';
-        });
-        return '<g transform="translate(' + ox + ',' + (180 - 180 * scale) / 2 + ') scale(' + scale + ')">' + g + '</g>';
-    };
-    if (tag) { out += '<text class="segTag" x="0" y="60">' + tag + '</text>'; x += 60; }
-    for (var i = 0; i < main.length; i++) {
-        var ch = main[i];
-        if (ch === ":" || ".".indexOf(ch) >= 0) {
-            if (theme.separator === "dot") { out += '<circle class="segOn" cx="' + (x + 22) + '" cy="150" r="10"/>'; }
-            else { out += '<circle class="segOn" cx="' + (x + 22) + '" cy="60" r="9"/><circle class="segOn" cx="' + (x + 22) + '" cy="120" r="9"/>'; }
-            x += 44;
-            continue;
-        }
-        out += cell(ch, x, 1);
-        x += 122;
-    }
-    if (aux) {
-        x += 40;
-        for (var j = 0; j < aux.length; j++) {
-            var c2 = aux[j];
-            if (c2 === "." || c2 === ":") { out += '<circle class="segOn" cx="' + (x + 8) + '" cy="150" r="5"/>'; x += 20; continue; }
-            out += cell(c2, x, 0.5);
-            x += 62;
-        }
-    }
-    svg.setAttribute("viewBox", "-20 -12 " + (Math.max(500, x) + 40) + " 204");
-    var cfgSkew = this.clockCfg().segmentSkew; // user-selectable slant overrides the theme default
-    var skew = (typeof cfgSkew === "number") ? cfgSkew : theme.skew;
-    svg.style.transform = skew ? ("skewX(" + skew + "deg)") : "";
-    svg.innerHTML = out;
+WNP.renderSegments = function (main, theme, tag) {
+    var el = this.r.clockSeg;
+    if (!el) { return; }
+    var slant = this.clockCfg().segmentSlant;
+    el.classList.toggle("slant", slant !== false); // default slanted
+    var ghost = theme.ghost || 0;
+    // Ghost = every glyph lit; digits -> 8, colon stays, spaces stay.
+    var ghostText = main.replace(/[0-9]/g, "8");
+    var html = "";
+    if (ghost > 0) { html += '<span class="segGhost" style="opacity:' + ghost + '">' + ghostText + '</span>'; }
+    if (tag) { html += '<span class="segTag">' + tag + '</span>'; }
+    html += '<span class="segMain">' + main + '</span>';
+    el.innerHTML = html;
 };
 
 // ---- Night shift (page-wide warm tint + dimming)
@@ -1806,7 +1830,7 @@ WNP.startClock = function () {
         // Time / date
         var d = new Date();
         var hh = String(d.getHours()).padStart(2, "0"), mm = String(d.getMinutes()).padStart(2, "0");
-        var timeHtml = hh + '<span class="colon' + (d.getSeconds() % 2 ? ' dim' : '') + '">:</span>' + mm;
+        var timeHtml = hh + '<span class="colon">:</span>' + mm; // steady colon (no per-second blink) everywhere
         self.r.clockTime.innerHTML = timeHtml;
         self.r.clockDate.innerText = d.toLocaleDateString(self.clockLocale(), { weekday: "long", day: "numeric", month: "long" });
         self.r.clockNote.innerText = (onInput && playing) ? ("TV audio via " + medium.toLowerCase()) : "";
@@ -1820,20 +1844,14 @@ WNP.startClock = function () {
             self.r.handHour.setAttribute("transform", "rotate(" + (hr * 30) + " 100 100)");
         }
 
-        // Seven-segment
+        // Seven-segment (weather is shown as icons via #clockWeather, not as digits)
         if (self.r.wnpClock.getAttribute("data-kind") === "segment") {
             var themeId = self.r.wnpClock.getAttribute("data-theme");
             var th = self.clockThemes[themeId] || {};
             var h24 = d.getHours(), tag = "";
             var hh2 = hh;
             if (th.ampm) { tag = h24 >= 12 ? "PM" : "AM"; hh2 = String(((h24 + 11) % 12) + 1).padStart(2, " "); }
-            var aux = "";
-            if (th.aux) {
-                var wxc = (self.d.serverSettings && self.d.serverSettings.features && self.d.serverSettings.features.weather) || {};
-                if (wxc.enabled && self.d.weather && !self.d.weather.error) { aux = String(self.d.weather.temp) + "°"; }
-                else { aux = String(d.getDate()).padStart(2, " ") + "." + String(d.getMonth() + 1).padStart(2, "0"); }
-            }
-            self.renderSegments(hh2 + ":" + mm, th, tag, aux);
+            self.renderSegments(hh2 + ":" + mm, th, tag);
         }
 
         self.applyClockTheme(); // handles day/night switching
@@ -1852,12 +1870,14 @@ WNP.startClock = function () {
     this.d.clockTimer = setInterval(tick, 1000);
     tick();
 
-    // Drift: nudge the clock every minute against OLED burn-in
+    // Drift: nudge the clock content every minute against OLED burn-in. The --drift
+    // var is applied to .wnpClockInner (not #wnpClock) so only the digits move, never
+    // the background. (fork)
     if (this.d.driftTimer) { clearInterval(this.d.driftTimer); }
     this.d.driftTimer = setInterval(function () {
         var cfg = self.clockCfg();
         if (cfg.drift === false) {
-            self.r.wnpClock.style.transform = "";
+            self.r.wnpClock.style.setProperty("--drift", "translate(0, 0)");
             return;
         }
         var x = Math.round((Math.random() - 0.5) * 40), y = Math.round((Math.random() - 0.5) * 40);

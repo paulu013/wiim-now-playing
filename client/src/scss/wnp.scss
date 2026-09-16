@@ -610,6 +610,40 @@
     }
 
 }
+/* DSEG7 Classic seven-segment font (keshikan/DSEG, bundled locally for offline kiosk use).
+ * The slanted look is the italic face, toggled via #clockSeg.slant. */
+@font-face {
+    font-family: "DSEG7 Classic";
+    src: url("../fonts/DSEG7Classic-Regular.woff2") format("woff2");
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "DSEG7 Classic";
+    src: url("../fonts/DSEG7Classic-Bold.woff2") format("woff2");
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "DSEG7 Classic";
+    src: url("../fonts/DSEG7Classic-Italic.woff2") format("woff2");
+    font-weight: 400;
+    font-style: italic;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "DSEG7 Classic";
+    src: url("../fonts/DSEG7Classic-BoldItalic.woff2") format("woff2");
+    font-weight: 700;
+    font-style: italic;
+    font-display: swap;
+}
+
 /* ------------------------
  * Clock overlay (Settings > Display)
  * Themed via CSS variables set from JS (WNP.applyClockTheme):
@@ -639,19 +673,21 @@
     justify-content: center;
 
     // Hidden by default; .visible shows it. Entrance/exit per data-transition.
+    // Note: the burn-in drift is NOT applied here — it lives on .wnpClockInner so
+    // the full-screen background never moves, only the content.
     --drift: translate(0, 0);
     opacity: 0;
     pointer-events: none;
-    transform: var(--drift);
+    transform: none;
     transition: opacity .6s ease, transform .6s cubic-bezier(.2, .8, .2, 1);
 
-    &[data-transition="slide-left"] { transform: translateX(100%) var(--drift); }
-    &[data-transition="slide-right"] { transform: translateX(-100%) var(--drift); }
+    &[data-transition="slide-left"] { transform: translateX(100%); }
+    &[data-transition="slide-right"] { transform: translateX(-100%); }
 
     &.visible {
         opacity: 1;
         pointer-events: auto;
-        transform: var(--drift);
+        transform: none;
     }
 
     .wnpClockInner {
@@ -660,6 +696,9 @@
         flex-direction: column;
         align-items: center;
         gap: 2vw;
+        // Burn-in drift moves only the content, not the background. (fork)
+        transform: var(--drift);
+        transition: transform .6s cubic-bezier(.2, .8, .2, 1);
     }
 
     // ---- digital
@@ -678,9 +717,7 @@
         letter-spacing: -.05em;
         font-variant-numeric: tabular-nums;
 
-        // Colon is static on the big digital clock: no per-second fade/blink.
-        // (The .dim class the tick still toggles is intentionally ignored here;
-        // it only drives the mini clock overlay.)
+        // Colon is static (the tick no longer toggles a per-second blink anywhere).
         .colon {
             display: inline-block;
         }
@@ -784,14 +821,14 @@
         }
     }
 
-    // ---- seven-segment
+    // ---- seven-segment (DSEG font)
     .clockSegment {
         display: none;
-        width: 82vw;
     }
 
     &[data-kind="segment"] .clockSegment {
         display: block;
+        text-align: center;
     }
 
     &[data-kind="segment"] #clockDate {
@@ -801,22 +838,39 @@
     }
 
     #clockSeg {
-        width: 100%;
-        height: auto;
+        position: relative;
+        display: inline-block;
+        font-family: "DSEG7 Classic", monospace;
+        font-weight: 700;
+        font-size: 20vw;
+        line-height: 1;
+        color: var(--clock-fg);
+        white-space: nowrap;
 
-        .segOn {
-            fill: var(--clock-fg);
+        &.slant {
+            font-style: italic;
         }
 
-        .segOff {
-            fill: var(--clock-fg);
+        // Ghost = all segments faintly lit behind the time; opacity set inline from theme.ghost.
+        .segGhost {
+            position: absolute;
+            left: 0;
+            top: 0;
+            color: var(--clock-fg);
+            pointer-events: none;
+        }
+
+        .segMain {
+            position: relative;
         }
 
         .segTag {
-            fill: var(--clock-fg);
             font-family: system-ui, sans-serif;
             font-weight: 700;
-            font-size: 34px;
+            font-size: .14em;
+            vertical-align: top;
+            margin-right: .12em;
+            color: var(--clock-fg2);
         }
     }
 
@@ -977,8 +1031,8 @@
     }
 
     // Bedside VFD: soft glow
-    &[data-theme="segment-bedside"] #clockSeg .segOn {
-        filter: drop-shadow(0 0 6px rgba(220, 239, 255, .55));
+    &[data-theme="segment-bedside"] #clockSeg {
+        text-shadow: 0 0 8px rgba(220, 239, 255, .55);
     }
 
     &[data-theme="analog-night"] #clockDial {
@@ -1016,10 +1070,6 @@
         display: inline-block;
     }
 
-    .colon.dim {
-        opacity: .3;
-    }
-
     &.pos-top-left { top: 0; left: 0; }
     &.pos-top-right { top: 0; right: 0; }
     &.pos-bottom-left { bottom: 0; left: 0; }
@@ -1052,6 +1102,61 @@ body.wnp-clock-on {
     }
 }
 
+/* Backdrop-hero artwork for Plex/Jellyfin video (Settings > Sources > Artwork = Backdrop).
+ * Full-bleed fanart behind the now-playing view, with a scrim for text legibility and
+ * an optional clear title logo. */
+#wnpHero {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 0; // above #wnpApp's gradient background, below the now-playing content
+
+    background: #000;
+
+    #wnpHeroImg {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    // Scrim: darker at the bottom (where title/artist/controls sit) and top edges.
+    &::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(0deg, rgba(0, 0, 0, .92) 0%, rgba(0, 0, 0, .55) 30%, rgba(0, 0, 0, .15) 65%, rgba(0, 0, 0, .45) 100%);
+    }
+
+    #wnpHeroLogo {
+        position: absolute;
+        left: 5vw;
+        top: 6vh;
+        max-width: 55vw;
+        max-height: 20vh;
+        object-fit: contain;
+        z-index: 1; // above the scrim
+        filter: drop-shadow(0 4px 16px rgba(0, 0, 0, .7));
+    }
+}
+
+body.wnp-hero {
+    #wnpApp {
+        background: #000; // let the backdrop show instead of the app gradient
+    }
+
+    #wnpHero {
+        display: block;
+    }
+
+    .wnpContainer {
+        z-index: 1; // now-playing text/controls above the backdrop
+    }
+
+    .wnpAlbumArt {
+        visibility: hidden; // the backdrop replaces the square album art
+    }
+}
+
 /* Idle blanking: everything black, clock included */
 body.wnp-blank {
     background: #000;
@@ -1066,6 +1171,10 @@ body.wnp-blank {
 @media (prefers-reduced-motion: reduce) {
     #wnpClock {
         transition: opacity .2s linear;
-        transform: var(--drift) !important;
+        transform: none !important;
+    }
+
+    #wnpClock .wnpClockInner {
+        transition: none; // still drifts (repositions) for burn-in, just without the glide
     }
 }

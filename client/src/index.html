@@ -54,7 +54,7 @@
                     </svg>
                 </div>
                 <div class="clockSegment">
-                    <svg id="clockSeg" viewBox="0 0 1000 220" xmlns="http://www.w3.org/2000/svg"></svg>
+                    <div id="clockSeg"><span class="segMain">88:88</span></div>
                 </div>
                 <div id="clockWeather" class="clockWeather"></div>
             </div>
@@ -64,6 +64,9 @@
         <div id="wnpNightShift"></div>
         <!-- Small clock over the now-playing view (Settings > Display) -->
         <div id="wnpMiniClock" class="d-none pos-top-right size-m">--:--</div>
+
+        <!-- Backdrop-hero artwork for Plex/Jellyfin video (Settings > Sources > Artwork) -->
+        <div id="wnpHero"><img id="wnpHeroImg" alt=""><img id="wnpHeroLogo" class="d-none" alt=""></div>
 
         <div class="wnpContainer">
 
@@ -478,12 +481,11 @@
                                 </div>
 
                                 <div class="mb-3">
-                                    <label class="form-label" for="segSkew">Seven-segment slant:
-                                        <span id="segSkewValue">-8</span>°</label>
-                                    <input type="range" class="form-range" id="segSkew" min="-20" max="20" step="1"
-                                        value="-8">
-                                    <div class="form-text small text-muted">Italic tilt of the seven-segment digits
-                                        (bedside / alarm themes).</div>
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="chkSegSlant">
+                                        <label class="form-check-label" for="chkSegSlant">Slanted seven-segment digits
+                                            (uses the italic DSEG font)</label>
+                                    </div>
                                 </div>
 
                                 <div class="mb-3">
@@ -587,6 +589,11 @@
                                         <input class="form-check-input" type="checkbox" id="chkWeatherForecast">
                                         <label class="form-check-label" for="chkWeatherForecast">3-day forecast</label>
                                     </div>
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="chkWeatherLabel" checked>
+                                        <label class="form-check-label" for="chkWeatherLabel">Show condition text (e.g.
+                                            "Overcast") — off = icon + temperature only</label>
+                                    </div>
                                     <div class="row g-2 mt-1">
                                         <div class="col-8">
                                             <label class="form-label small" for="weatherLocation">Location</label>
@@ -621,6 +628,14 @@
                                         <select class="form-select" id="selExternalPriority">
                                             <option value="wiim">the WiiM</option>
                                             <option value="external">the Plex/Jellyfin session</option>
+                                        </select>
+                                    </div>
+                                    <div class="mt-2">
+                                        <label class="form-label" for="selExternalArtwork">Artwork</label>
+                                        <select class="form-select" id="selExternalArtwork">
+                                            <option value="backdrop">Backdrop (full-screen hero + logo)</option>
+                                            <option value="poster">Poster (movie / show)</option>
+                                            <option value="still">Still (episode grab)</option>
                                         </select>
                                     </div>
                                     <div class="form-text small text-muted">Plex played on the WiiM itself already

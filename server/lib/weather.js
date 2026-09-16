@@ -14,6 +14,7 @@ const log = require("debug")("lib:weather");
 const DEFAULTS = {
     enabled: false,      // show outside temperature on the clock
     forecast: false,     // show a 3-day forecast on the clock
+    showLabel: true,     // show the condition text (e.g. "Overcast"); off = icon + temperature only
     location: "",        // free text, e.g. "Venray" — geocoded once, result cached in lat/lon/name
     lat: null,
     lon: null,
@@ -64,7 +65,12 @@ const poll = async (io, serverSettings, lib) => {
                 Object.assign(cfg, g);
             }
         }
-        if (cfg.lat == null || cfg.lon == null) { log("no location"); return; }
+        if (cfg.lat == null || cfg.lon == null) {
+            log("no location");
+            // Give the UI something to show instead of failing silently.
+            io.emit("weather", { error: cfg.location ? ("location not found: " + cfg.location) : "no location set", updated: Date.now() });
+            return;
+        }
         const imperial = cfg.units === "imperial";
         const url = `https://api.open-meteo.com/v1/forecast?latitude=${cfg.lat}&longitude=${cfg.lon}`
             + `&current=temperature_2m,weather_code,is_day`

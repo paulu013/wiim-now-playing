@@ -85,7 +85,7 @@ let serverSettings = { // Placeholder for current server settings
             "blankAfterMinutes": 0, // Blank the whole screen after this many idle minutes (0 = never)
             "theme": "digital-minimal", // Day theme id, see client WNP.clockThemes
             "nightTheme": "digital-minimal", // Theme used between sunset and sunrise when autoDayNight is on
-            "segmentSkew": -8, // Italic tilt (deg) of the seven-segment digits; overrides the theme's default skew
+            "segmentSlant": true, // Use the slanted (italic) DSEG face for seven-segment themes
             "autoDayNight": false, // Switch themes on sunrise/sunset (needs weather location)
             "override": { "enabled": false, "font": "" }, // Overrule theme font
             "colors": { "custom": {}, "gradient": false, "nightDim": 100, "base": "#ede8df", "scheme": "mono" }, // Per-role colour overrides (see WNP.colorRoles), gradient bg, night dimming %
@@ -308,17 +308,18 @@ io.on("connection", (socket) => {
         pollExternal = external.start(io, deviceInfo, serverSettings);
         pollWeather = weather.start(io, serverSettings, lib);
     }
-    else if (io.sockets.sockets.size >= 1) {
-        // If new client, send current state and metadata 'immediately'
-        // When sending directly after a reboot things get wonky
-        const cur = external.currentMessages(deviceInfo, serverSettings);
-        socket.emit("state", cur.state);
-        socket.emit("metadata", cur.metadata);
-        if (weather.getCurrent()) { socket.emit("weather", weather.getCurrent()); }
-        if (deviceInfo.lyrics) {
-            socket.emit("lyrics-get", deviceInfo.lyrics);
-            lyrics.getLyricsCacheStats(io);
-        }
+
+    // Send the latest known state/metadata to every freshly connected client
+    // (including the first one / a page refresh) so it doesn't sit on the empty
+    // placeholder template until the next poll cycle. Guarded because nothing may
+    // be cached yet on a cold start.
+    const cur = external.currentMessages(deviceInfo, serverSettings);
+    if (cur.state) { socket.emit("state", cur.state); }
+    if (cur.metadata) { socket.emit("metadata", cur.metadata); }
+    if (weather.getCurrent()) { socket.emit("weather", weather.getCurrent()); }
+    if (deviceInfo.lyrics) {
+        socket.emit("lyrics-get", deviceInfo.lyrics);
+        lyrics.getLyricsCacheStats(io);
     }
 
     /**
@@ -385,6 +386,18 @@ io.on("connection", (socket) => {
     socket.on("device-action", (msg) => {
         log("Socket event", "device-action", msg);
         upnp.callDeviceAction(ioDev, msg, deviceInfo, serverSettings);
+    });
+
+    /**
+     * Transport control for the current external (Plex/Jellyfin) session.
+     * @param {string} action - "Play" | "Pause" | "Stop"
+     */
+    socket.on("external-action", (action) => {
+        log("Socket event", "external-action", action);
+        external.control(serverSettings, action).then(() => {
+            // Re-poll shortly after so the UI reflects the new play/pause state.
+            setTimeout(() => external.poll(io, deviceInfo, serverSettings), 700);
+        });
     });
 
     /**

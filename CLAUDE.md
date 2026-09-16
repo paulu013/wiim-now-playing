@@ -37,7 +37,7 @@ Always commit `server/public/` after a client build; the Pi runs from the commit
 - No external CSS/JS beyond what upstream already loads from CDN.
 
 ## Adding a clock theme from an example image
-1. Pick `kind` (digital / analog / segment — segment = SVG seven-segment digits drawn by `WNP.renderSegments`, options `separator: "dot"|"colon"`, `skew`, `ghost` (unlit segment opacity), `ampm`, `aux` (temperature or date readout)), a Google Font family, and a colour preset (add one to `WNP.clockColors` if needed).
+1. Pick `kind` (digital / analog / segment — segment = the bundled DSEG7 Classic font (`client/src/fonts/`, `@font-face` in wnp.scss) rendered by `WNP.renderSegments`; per-theme options `ghost` (faint all-segments layer opacity) and `ampm`; the slant is the global user setting `features.clock.segmentSlant` = italic DSEG face; weather shows as icons via `#clockWeather`, not segment digits), a Google Font family, and a colour preset (add one to `WNP.clockColors` if needed).
 2. Add the entry to `WNP.clockThemes` (`name`, `kind`, `font`, `colors`, `dial`, `numerals: "arabic"|"quarters"|"none"`).
    Analog extras: `brandY`/`subY` for dial-text position; colour presets may add `face`, `hand`, `inset` (white alarm-clock style).
 3. Add `#wnpClock[data-theme="<id>"] { … }` in `wnp.scss` for geometry only (sizes, weights, hand shapes, tick visibility). Colours/fonts must stay on the CSS variables so the override switch keeps working.
