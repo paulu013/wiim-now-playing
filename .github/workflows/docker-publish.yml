@@ -4,7 +4,15 @@ on:
   push:
     branches: [main]
     tags: ['v*']
-  workflow_dispatch:
+    # Only rebuild when something that affects the image changes (skips docs-only pushes
+    # like CLAUDE.md / deploy/**). server/** covers the committed client build in server/public.
+    paths:
+      - 'server/**'
+      - 'docker/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/docker-publish.yml'
+  workflow_dispatch:   # manual trigger (e.g. to force a rebuild regardless of paths)
 
 permissions:
   contents: read
