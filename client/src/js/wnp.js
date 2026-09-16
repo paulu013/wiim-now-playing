@@ -699,6 +699,13 @@ WNP.setSocketDefinitions = function () {
         WNP.d.isExternal = Boolean(msg.external);
         document.body.classList.toggle("wnp-external", WNP.d.isExternal);
 
+        // Session ended: drop the hero/artwork layout so the normal idle clock + controls
+        // return. The classes are set from metadata, which isn't re-emitted on stop, so we
+        // clear them here on the STOPPED state (which is emitted). PAUSED keeps the backdrop. (fork)
+        if (msg.CurrentTransportState === "STOPPED" || msg.CurrentTransportState === "NO_MEDIA_PRESENT") {
+            document.body.classList.remove("wnp-hero", "wnp-art-backdrop", "wnp-art-poster", "wnp-art-still", "wnp-art-clock");
+        }
+
     });
 
     // On metadata

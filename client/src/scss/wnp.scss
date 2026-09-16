@@ -1182,9 +1182,9 @@ body.wnp-hero {
         display: block;
     }
 
-    .wnpContainer {
-        z-index: 1; // now-playing text/controls above the backdrop
-    }
+    // NB: don't give .wnpContainer a z-index here — it already paints above #wnpHero by
+    // DOM order, and a z-index would create a stacking context that traps the fixed
+    // auto-hiding top controls (z-index 1045) below #wnpClock (1040), making them unclickable.
 
     .wnpAlbumArt {
         visibility: hidden; // the backdrop replaces the square album art
