@@ -703,7 +703,20 @@ WNP.setSocketDefinitions = function () {
         // return. The classes are set from metadata, which isn't re-emitted on stop, so we
         // clear them here on the STOPPED state (which is emitted). PAUSED keeps the backdrop. (fork)
         if (msg.CurrentTransportState === "STOPPED" || msg.CurrentTransportState === "NO_MEDIA_PRESENT") {
+            var hadArt = ["wnp-hero", "wnp-art-backdrop", "wnp-art-poster", "wnp-art-still", "wnp-art-clock"]
+                .some(function (c) { return document.body.classList.contains(c); });
             document.body.classList.remove("wnp-hero", "wnp-art-backdrop", "wnp-art-poster", "wnp-art-still", "wnp-art-clock");
+            // Removing the hero/art classes reveals the plain now-playing view (with the last
+            // album-art poster) until the idle-clock delay elapses. When we were showing the
+            // hero/clock, jump straight to the clock in this same frame so the poster never
+            // flashes: reset the idle timer and reveal the clock now (the tick keeps it up). (fork)
+            if (hadArt && WNP.r.wnpClock) {
+                WNP.d.lastPlayingMs = 0; // idle immediately, skip the "show clock after" delay
+                WNP.d.manualClock = false;
+                WNP.d.clockVisible = true;
+                WNP.r.wnpClock.classList.add("visible");
+                document.body.classList.add("wnp-clock-on");
+            }
         }
 
     });
@@ -1829,6 +1842,10 @@ WNP.applyNightShift = function (force) {
     var cfg = this.nightShiftCfg();
     var on = force !== undefined ? force : this.nightShiftActive(cfg);
     var el = this.r.wnpNightShift;
+    // Native form-control popups (e.g. <select> option lists) are painted by the OS above the
+    // page, so the multiply overlay can't tint them; switch the document to a dark colour
+    // scheme during night shift so those popups aren't jarringly bright white. (fork)
+    document.documentElement.classList.toggle("wnp-nightshift", on);
     if (!on) { el.style.opacity = "0"; return; }
     el.style.background = this.nightShiftColor(cfg.warmth || 0, (typeof cfg.brightness === "number") ? cfg.brightness : 100);
     el.style.opacity = "1";

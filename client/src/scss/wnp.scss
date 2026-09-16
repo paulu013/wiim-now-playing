@@ -1060,6 +1060,13 @@
     transition: opacity 1.5s ease, background 1.5s ease;
 }
 
+/* Native popups (<select> option lists, date/time pickers) are painted by the OS above the
+   page, so the multiply overlay above can't tint them. During night shift switch the document
+   to a dark colour scheme so those popups render dark instead of bright white. (fork) */
+html.wnp-nightshift {
+    color-scheme: dark;
+}
+
 /* Small clock over the now-playing view */
 #wnpMiniClock {
     position: fixed;
