@@ -52,5 +52,27 @@ Always commit `server/public/` after a client build; the Pi runs from the commit
 - Possible: a dedicated 4:3 layout for the 2480×1860 panel (art left, text right) — currently the responsive upstream layout is used.
 - Possible: tap zones on the clock/TV view for prev/pause/next.
 
-## Deployment target
-Raspberry Pi OS Lite (Bookworm, 64-bit) on Pi 4, Node 20+, upstream's kiosk docs (cage/Chromium). Panel: Wisecoco 8" AMOLED 2480×1860 via HDMI board (EDID expected; fallback `hdmi_cvt` in README of the earlier Python prototype).
+## Deployment (see `deploy/README.md` for full steps)
+Architecture: **server in the homelab** (Portainer, server VLAN) + **WiiM in the IOT VLAN** + a
+**Raspberry Pi as a pure Chromium kiosk** (Wisecoco 8" AMOLED 2480×1860 via HDMI) pointed at the
+homelab URL's `/tv` route.
+- **Image:** `.github/workflows/docker-publish.yml` builds `docker/Dockerfile` (which builds *this
+  fork* from the repo context — no upstream clone) multi-arch (amd64+arm64) → **private**
+  `ghcr.io/paulu013/wiim-now-playing` via `GITHUB_TOKEN` on push to `main`/tags. Pull needs a
+  `read:packages` PAT (add as a Portainer registry).
+- **Cross-VLAN WiiM without SSDP:** set `WIIM_LOCATION` (the device descriptor URL, e.g.
+  `http://<wiim-ip>:49152/description.xml`) — `server/index.js` selects the device directly via
+  `upnp.getDeviceDescription` and skips SSDP; all WiiM comms are then unicast (UPnP ~TCP 49152 +
+  LinkPlay HTTPS 443), which routes across VLANs. Firewall: allow Docker host → WiiM 49152/443;
+  DHCP-reserve the WiiM. (Fallback for same-L2 auto-discovery: omit `WIIM_LOCATION`, use
+  `network_mode: host`, allow UDP 1900 — or an SSDP `multicast-relay`.) The WiiM *Home app* uses
+  mDNS (`_linkplay._tcp`, Avahi reflector) — a different protocol than this SSDP/UPnP app.
+- **Config/secrets:** a gitignored `.env` (`docker/.env.example`) supplies `WIIM_LOCATION`, Plex/
+  Jellyfin URL+token/key+users, `EXTERNAL_PRIORITY`; env overrides the UI (`getConfig`) so secrets
+  stay out of `settings.json`. Data volume `/app/data`. Default `PORT` 80 (compose maps `8099:80`).
+- **Homelab stack:** `deploy/homelab/nowplaying/` → copy into the `paulu013/homelab` repo as
+  `docker/nowplaying/` (own stack folder; bridge net + published port, optional Traefik labels —
+  never behind Authentik, the kiosk can't SSO).
+- **Kiosk Pi:** Raspberry Pi OS Lite (Bookworm 64-bit), `cage` + Chromium via a systemd unit (see
+  `deploy/README.md`); AMOLED via EDID, fallback `hdmi_cvt`/`hdmi_timings` in `config.txt`,
+  `consoleblank=0`; enable clock drift / night shift / idle-blank for OLED care.
