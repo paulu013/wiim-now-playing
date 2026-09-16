@@ -86,10 +86,11 @@ const pollPlex = async (cfg) => {
         log("plex", e.message);
         return null;
     }
+    const PLEX_TYPES = ["track", "movie", "episode", "clip"]; // music + video
     const players = cfg.players.map(p => p.toLowerCase());
     let best = null;
     for (const it of items) {
-        if (it.type !== "track") continue;
+        if (!PLEX_TYPES.includes(it.type)) continue;
         const player = it.Player || {};
         if (players.length && !players.includes((player.title || "").toLowerCase())) continue;
         if (player.state === "playing") { best = it; break; }
@@ -97,14 +98,26 @@ const pollPlex = async (cfg) => {
     }
     if (!best) return null;
     const media = (best.Media && best.Media[0]) || {};
-    const thumb = best.thumb || best.parentThumb;
+    const thumb = best.thumb || best.parentThumb || best.grandparentThumb;
+
+    // Map to the music-shaped now-playing fields per content type.
+    let title = best.title || "", artist = "", album = "", year = null;
+    if (best.type === "episode") {
+        artist = best.grandparentTitle || "";                                   // show name
+        album = best.parentTitle || (best.parentIndex ? `Season ${best.parentIndex}` : "");
+        if (best.index) { album = (album ? album + " · " : "") + `Episode ${best.index}`; }
+    } else if (best.type === "movie" || best.type === "clip") {
+        artist = (best.Director && best.Director[0] && best.Director[0].tag) || best.tagline || "";
+        album = best.year ? String(best.year) : "";
+    } else { // track (music)
+        artist = best.originalTitle || best.grandparentTitle || "";
+        album = best.parentTitle || "";
+        year = best.parentYear || best.year || null;
+    }
     return {
         source: "Plex",
         state: best.Player.state === "playing" ? "PLAYING" : "PAUSED_PLAYBACK",
-        title: best.title || "",
-        artist: best.originalTitle || best.grandparentTitle || "",
-        album: best.parentTitle || "",
-        year: best.parentYear || best.year || null,
+        title, artist, album, year,
         art: thumb ? `${base}${thumb}?X-Plex-Token=${encodeURIComponent(cfg.token)}` : "",
         position: (best.viewOffset || 0) / 1000,
         duration: (best.duration || 0) / 1000,
@@ -129,11 +142,12 @@ const pollJellyfin = async (cfg) => {
         log("jellyfin", e.message);
         return null;
     }
+    const JF_TYPES = ["Audio", "Movie", "Episode", "Video", "MusicVideo"]; // music + video
     const players = cfg.players.map(p => p.toLowerCase());
     let best = null;
     for (const s of sessions) {
         const item = s.NowPlayingItem;
-        if (!item || item.Type !== "Audio") continue;
+        if (!item || !JF_TYPES.includes(item.Type)) continue;
         if (players.length && !players.includes((s.DeviceName || "").toLowerCase())) continue;
         const paused = s.PlayState && s.PlayState.IsPaused;
         if (!paused) { best = s; break; }
@@ -142,15 +156,28 @@ const pollJellyfin = async (cfg) => {
     if (!best) return null;
     const item = best.NowPlayingItem;
     const ps = best.PlayState || {};
-    const imgId = item.AlbumId || item.Id;
+    const isEpisode = item.Type === "Episode";
+    const imgId = (isEpisode ? item.SeriesId : item.AlbumId) || item.Id;
     const stream = (item.MediaStreams || []).find(m => m.Type === "Audio") || {};
+
+    // Map to the music-shaped now-playing fields per content type.
+    let title = item.Name || "", artist = "", album = "", year = null;
+    if (isEpisode) {
+        artist = item.SeriesName || "";
+        album = (item.SeasonName || (item.ParentIndexNumber ? `Season ${item.ParentIndexNumber}` : ""));
+        if (item.IndexNumber) { album = (album ? album + " · " : "") + `Episode ${item.IndexNumber}`; }
+    } else if (item.Type === "Movie" || item.Type === "Video") {
+        artist = (item.Genres && item.Genres[0]) || "";
+        album = item.ProductionYear ? String(item.ProductionYear) : "";
+    } else { // Audio / MusicVideo
+        artist = (item.Artists && item.Artists.join(", ")) || item.AlbumArtist || "";
+        album = item.Album || "";
+        year = item.ProductionYear || null;
+    }
     return {
         source: "Jellyfin",
         state: ps.IsPaused ? "PAUSED_PLAYBACK" : "PLAYING",
-        title: item.Name || "",
-        artist: (item.Artists && item.Artists.join(", ")) || item.AlbumArtist || "",
-        album: item.Album || "",
-        year: item.ProductionYear || null,
+        title, artist, album, year,
         art: imgId ? `${base}/Items/${imgId}/Images/Primary?maxHeight=1400` : "",
         position: (ps.PositionTicks || 0) / 1e7,
         duration: (item.RunTimeTicks || 0) / 1e7,
