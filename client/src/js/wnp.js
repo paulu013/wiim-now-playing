@@ -75,7 +75,10 @@ WNP.Init = function () {
 
     // Init Socket.IO, connect to port where server resides
     console.log("WNP", "Listening on " + this.s.locHostname + ":" + this.s.locPort)
-    window.socket = io.connect(":" + this.s.locPort);
+    // Connect to the same origin that served the page. Works for direct LAN access
+    // (http://host:8099) AND behind a reverse proxy on 443 (wss://name.example.com) — the
+    // old `io.connect(":" + locPort)` forced :80 and broke behind an HTTPS proxy. (fork)
+    window.socket = io();
 
     // Set references to the UI elements
     this.setUIReferences();
@@ -1370,13 +1373,9 @@ WNP.checkAlbumArtURI = function (sAlbumArtUri, nTimestamp) {
     // If the URI starts with https, the self signed certificate may not trusted by the browser.
     // Hence we always try and load the image through a reverse proxy, ignoring the certificate.
     if (sAlbumArtUri && sAlbumArtUri.startsWith("https")) {
-        var sAlbumArtProxyUri = "";
-        if (WNP.s.locPort != "80") { // If the server is not running on port 80, we need to add the port to the URI
-            sAlbumArtProxyUri = "http://" + WNP.s.locHostname + ":" + WNP.s.locPort + "/proxy-art?url=" + encodeURIComponent(sAlbumArtUri) + "&ts=" + nTimestamp; // Use the current timestamp as cache buster
-        } else {
-            sAlbumArtProxyUri = "http://" + WNP.s.locHostname + "/proxy-art?url=" + encodeURIComponent(sAlbumArtUri) + "&ts=" + nTimestamp; // Use the current timestamp as cache buster
-        }
-        return sAlbumArtProxyUri;
+        // Proxy self-signed https art through our own origin (relative URL → correct
+        // host/port/scheme whether direct or behind an HTTPS reverse proxy). (fork)
+        return "/proxy-art?url=" + encodeURIComponent(sAlbumArtUri) + "&ts=" + nTimestamp;
     } else if (sAlbumArtUri && sAlbumArtUri.startsWith("http")) {
         return sAlbumArtUri;
     } else {
