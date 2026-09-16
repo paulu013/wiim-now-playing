@@ -1077,14 +1077,14 @@
                     order: 1; // top (its glyph top lines up with the time's top)
                     font-family: "DSEG7 Classic", monospace;
                     font-weight: 700;
-                    font-size: 6.5vw; // a bit smaller than the time
+                    font-size: 8vw; // a bit smaller than the time
                     line-height: 1;
                     color: var(--clock-fg);
                 }
 
                 .bi {
-                    order: 2; // below the temperature
-                    font-size: 5vw;
+                    order: 2; // below the temperature, sized to sit almost as wide as it
+                    font-size: 11vw;
                     line-height: 1;
                     color: var(--clock-fg); // icon matches the time colour
                 }
