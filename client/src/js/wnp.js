@@ -13,7 +13,9 @@ WNP.s = {
     // Device selection
     aDeviceUI: ["btnPrev", "btnPlay", "btnNext", "btnRefresh", "selDeviceChoices", "devName", "devNameHolder", "mediaTitle", "mediaSubTitle", "mediaArtist", "mediaAlbum", "mediaBitRate", "mediaBitDepth", "mediaSampleRate", "mediaQualityIdent", "devVol", "btnRepeat", "btnShuffle", "progressPlayed", "progressLeft", "progressPercent", "mediaSource", "albumArt", "bgAlbumArtBlur", "btnDevSelect", "oDeviceList", "btnDevPreset", "oPresetList", "btnDevVolume", "rVolume", "mediaLyrics", "lyricPrev", "lyricCurrent", "lyricNext", "lyricAfter", "alerts"],
     // Server actions to be used in the app
-    aServerUI: ["btnReboot", "btnUpdate", "btnShutdown", "btnReloadUI", "sServerUrlHostname", "sServerUrlIP", "sServerVersion", "sClientVersion", "chkLyricsEnabled", "lyricsCacheSize", "btnClearLyricsCache", "lyricsOffsetMs"],
+    aServerUI: ["btnReboot", "btnUpdate", "btnShutdown", "btnReloadUI", "sServerUrlHostname", "sServerUrlIP", "sServerVersion", "sClientVersion", "chkLyricsEnabled", "lyricsCacheSize", "btnClearLyricsCache", "lyricsOffsetMs",
+        "wnpClock", "clockTime", "clockDate", "clockNote", "chkClockEnabled", "chkClockOnInput", "chkClockDrift", "clockAfterSeconds", "clockBlankAfterMinutes",
+        "chkExternalEnabled", "selExternalPriority", "plexUrl", "plexToken", "plexPlayers", "jellyfinUrl", "jellyfinApiKey", "jellyfinPlayers", "btnSaveSources"],
     // Default timeout for alerts in ms
     alertTimeoutMs: 5000
 };
@@ -30,7 +32,12 @@ WNP.d = {
     lyricsLastRelTime: null, // Last known RelTime, used for lyrics timing
     lyricsLastTimeStampDiffMs: null, // Last known timestamp difference in ms, used for lyrics timing
     lyricsIndex: null, // Current lyrics line index
-    alertTimeout: null // Alert timeout, used for storing the timeout for the alerts
+    alertTimeout: null, // Alert timeout, used for storing the timeout for the alerts
+    lastState: null, // Last state message, used by the clock logic
+    lastPlayingMs: Date.now(), // Last time something was playing (or an input was active), used by the clock logic
+    clockVisible: false, // Whether the clock overlay is currently shown
+    clockTimer: null, // Clock tick interval
+    driftTimer: null // Clock drift interval
 };
 
 // Reference placeholders.
@@ -57,6 +64,9 @@ WNP.Init = function () {
 
     // Set UI event listeners
     this.setUIListeners();
+
+    // Clock overlay (see Settings > Display)
+    this.startClock();
 
     // Initial calls, wait a bit for socket to start
     setTimeout(() => {
@@ -195,6 +205,42 @@ WNP.setUIListeners = function () {
         location.reload();
     });
 
+    // Clock settings
+    var clockInputs = ["chkClockEnabled", "chkClockOnInput", "chkClockDrift", "clockAfterSeconds", "clockBlankAfterMinutes"];
+    clockInputs.forEach(function (id) {
+        if (!WNP.r[id]) { return; }
+        WNP.r[id].addEventListener("change", function () {
+            socket.emit("features-settings", {
+                features: {
+                    clock: {
+                        enabled: WNP.r.chkClockEnabled.checked,
+                        onInput: WNP.r.chkClockOnInput.checked,
+                        drift: WNP.r.chkClockDrift.checked,
+                        afterSeconds: Math.max(0, parseInt(WNP.r.clockAfterSeconds.value, 10) || 0),
+                        blankAfterMinutes: Math.max(0, parseInt(WNP.r.clockBlankAfterMinutes.value, 10) || 0)
+                    }
+                }
+            });
+        });
+    });
+
+    // External sources (Plex / Jellyfin) settings
+    if (this.r.btnSaveSources) {
+        this.r.btnSaveSources.addEventListener("click", function () {
+            socket.emit("features-settings", {
+                features: {
+                    external: {
+                        enabled: WNP.r.chkExternalEnabled.checked,
+                        priority: WNP.r.selExternalPriority.value,
+                        plex: { url: WNP.r.plexUrl.value.trim(), token: WNP.r.plexToken.value.trim(), players: WNP.r.plexPlayers.value },
+                        jellyfin: { url: WNP.r.jellyfinUrl.value.trim(), apiKey: WNP.r.jellyfinApiKey.value.trim(), players: WNP.r.jellyfinPlayers.value }
+                    }
+                }
+            });
+            WNP.showAlert("Sources saved", "success");
+        });
+    }
+
     // Set lyrics toggle
     this.r.chkLyricsEnabled.addEventListener("change", function () {
         socket.emit("lyrics-settings", {
@@ -307,6 +353,28 @@ WNP.setSocketDefinitions = function () {
         // Set the client version
         WNP.r.sClientVersion.innerText = (msg && msg.version && msg.version.client) ? msg.version.client : "-";
 
+        // Clock settings
+        var clk = (msg && msg.features && msg.features.clock) ? msg.features.clock : {};
+        if (WNP.r.chkClockEnabled) {
+            WNP.r.chkClockEnabled.checked = clk.enabled !== false;
+            WNP.r.chkClockOnInput.checked = Boolean(clk.onInput);
+            WNP.r.chkClockDrift.checked = clk.drift !== false;
+            WNP.r.clockAfterSeconds.value = (typeof clk.afterSeconds === "number") ? clk.afterSeconds : 10;
+            WNP.r.clockBlankAfterMinutes.value = (typeof clk.blankAfterMinutes === "number") ? clk.blankAfterMinutes : 0;
+        }
+        // External sources settings
+        var ext = (msg && msg.features && msg.features.external) ? msg.features.external : {};
+        if (WNP.r.chkExternalEnabled) {
+            WNP.r.chkExternalEnabled.checked = ext.enabled !== false;
+            WNP.r.selExternalPriority.value = ext.priority || "wiim";
+            WNP.r.plexUrl.value = (ext.plex && ext.plex.url) || "";
+            WNP.r.plexToken.value = (ext.plex && ext.plex.token) || "";
+            WNP.r.plexPlayers.value = (ext.plex && ext.plex.players) ? [].concat(ext.plex.players).join(", ") : "";
+            WNP.r.jellyfinUrl.value = (ext.jellyfin && ext.jellyfin.url) || "";
+            WNP.r.jellyfinApiKey.value = (ext.jellyfin && ext.jellyfin.apiKey) || "";
+            WNP.r.jellyfinPlayers.value = (ext.jellyfin && ext.jellyfin.players) ? [].concat(ext.jellyfin.players).join(", ") : "";
+        }
+
         // Lyrics enabled/disabled
         if (WNP.r.chkLyricsEnabled) {
             WNP.r.chkLyricsEnabled.checked = Boolean(msg && msg.features && msg.features.lyrics && msg.features.lyrics.enabled);
@@ -403,6 +471,7 @@ WNP.setSocketDefinitions = function () {
 
     // On state
     socket.on("state", function (msg) {
+        WNP.d.lastState = msg || null;
         if (!msg) { return false; }
 
         // Get player progress data from the state message.
@@ -496,7 +565,8 @@ WNP.setSocketDefinitions = function () {
                 mediaSource.innerHTML = identImg.outerHTML;
             }
             else {
-                mediaSource.innerText = playMedium + ": " + trackSource;
+                // No icon for this source: show its name (e.g. Jellyfin)
+                mediaSource.innerText = trackSource || playMedium;
             }
             WNP.d.prevSourceIdent = sourceIdent; // Remember the last Source Ident
         }
@@ -506,6 +576,11 @@ WNP.setSocketDefinitions = function () {
         WNP.r.mediaSubTitle.innerText = (msg.trackMetaData && msg.trackMetaData["dc:subtitle"]) ? msg.trackMetaData["dc:subtitle"] : "";
         WNP.r.mediaArtist.innerText = (msg.trackMetaData && msg.trackMetaData["upnp:artist"]) ? (Array.isArray(msg.trackMetaData["upnp:artist"]) ? msg.trackMetaData["upnp:artist"][0] : msg.trackMetaData["upnp:artist"]) : "";
         WNP.r.mediaAlbum.innerText = (msg.trackMetaData && msg.trackMetaData["upnp:album"]) ? msg.trackMetaData["upnp:album"] : "";
+        // Plex user rating (external sessions only), 0-10 -> stars
+        var wnpRating = (msg.trackMetaData && msg.trackMetaData["wnp:rating"]) ? Number(msg.trackMetaData["wnp:rating"]) : 0;
+        if (wnpRating > 0) {
+            WNP.r.mediaAlbum.innerText += "  " + "\u2605".repeat(Math.round(wnpRating / 2));
+        }
         if (playMedium === "SONGLIST-NETWORK" && !trackSource && msg.CurrentTransportState === "STOPPED") {
             WNP.r.mediaTitle.innerText = "No Music Selected";
         }
@@ -1092,6 +1167,71 @@ WNP.rndNumber = function (min, max) {
 };
 
 /**
+ * Start the clock overlay logic. Runs every second.
+ * Shows the clock when nothing has been playing for features.clock.afterSeconds,
+ * optionally also while a TV/line input is active, and blanks the page after
+ * features.clock.blankAfterMinutes of idle time.
+ * @returns {undefined}
+ */
+WNP.startClock = function () {
+    if (!this.r.wnpClock) { return; }
+    var self = this;
+    var inputs = ["HDMI", "OPTICAL", "LINE-IN", "BLUETOOTH", "SPDIF"];
+
+    var tick = function () {
+        var cfg = (self.d.serverSettings && self.d.serverSettings.features && self.d.serverSettings.features.clock) || {};
+        var enabled = cfg.enabled !== false;
+        var afterMs = ((typeof cfg.afterSeconds === "number") ? cfg.afterSeconds : 10) * 1000;
+        var blankMs = ((typeof cfg.blankAfterMinutes === "number") ? cfg.blankAfterMinutes : 0) * 60000;
+
+        var st = self.d.lastState;
+        var transport = st ? st.CurrentTransportState : null;
+        var medium = st && st.PlayMedium ? String(st.PlayMedium).toUpperCase() : "";
+        var onInput = inputs.indexOf(medium) >= 0;
+        var playing = transport === "PLAYING" || transport === "TRANSITIONING" || transport === "PAUSED_PLAYBACK";
+        var now = Date.now();
+
+        // Something is playing and it is not a plain input (or inputs are allowed to count as playing)
+        if (playing && !(onInput && cfg.onInput)) { self.d.lastPlayingMs = now; }
+        // An active input still counts as "activity" for the blanking timer
+        var lastActivityMs = (playing && onInput) ? now : self.d.lastPlayingMs;
+
+        var showClock = enabled && (now - self.d.lastPlayingMs) >= afterMs;
+        var blank = blankMs > 0 && (now - lastActivityMs) >= blankMs;
+
+        // Time / date text
+        var d = new Date();
+        var hh = String(d.getHours()).padStart(2, "0"), mm = String(d.getMinutes()).padStart(2, "0");
+        self.r.clockTime.innerHTML = hh + '<span class="colon' + (d.getSeconds() % 2 ? ' dim' : '') + '">:</span>' + mm;
+        self.r.clockDate.innerText = d.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" });
+        self.r.clockNote.innerText = (onInput && playing) ? ("TV audio via " + medium.toLowerCase()) : "";
+
+        if (showClock !== self.d.clockVisible) {
+            self.d.clockVisible = showClock;
+            self.r.wnpClock.classList.toggle("d-none", !showClock);
+            document.body.classList.toggle("wnp-clock-on", showClock);
+        }
+        document.body.classList.toggle("wnp-blank", blank);
+    };
+
+    if (this.d.clockTimer) { clearInterval(this.d.clockTimer); }
+    this.d.clockTimer = setInterval(tick, 1000);
+    tick();
+
+    // Drift: nudge the clock (and the whole page, slightly) every minute against OLED burn-in
+    if (this.d.driftTimer) { clearInterval(this.d.driftTimer); }
+    this.d.driftTimer = setInterval(function () {
+        var cfg = (self.d.serverSettings && self.d.serverSettings.features && self.d.serverSettings.features.clock) || {};
+        if (cfg.drift === false) {
+            self.r.wnpClock.style.transform = "";
+            return;
+        }
+        var x = Math.round((Math.random() - 0.5) * 40), y = Math.round((Math.random() - 0.5) * 40);
+        self.r.wnpClock.style.transform = "translate(" + x + "px, " + y + "px)";
+    }, 60000);
+};
+
+/**
  * Get an identifier for the current play medium combined with the tracksource.
  * TODO: Verify all/most sources...
  * @param {string} playMedium - The PlayMedium as indicated by the device. Values: SONGLIST-NETWORK, RADIO-NETWORK, STATION-NETWORK, CAST, AIRPLAY, SPOTIFY, UNKOWN
@@ -1232,6 +1372,14 @@ WNP.getQualityIdent = function (songQuality, songActualQuality, songBitrate, son
         case ":HI_RES_LOSSLESS": // Tidal
         case "0:LOSSLESS": // Deezer
             sIdent = "FLAC";
+            break;
+        case ":FLAC": // Plex / Jellyfin (external sessions)
+        case ":ALAC":
+        case ":MP3":
+        case ":AAC":
+        case ":OPUS":
+        case ":OGG":
+            sIdent = songActualQuality;
             break;
         case ":UHD": // Amazon Music
             sIdent = "ULTRA HD";

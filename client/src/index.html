@@ -25,6 +25,15 @@
             <div id="bgAlbumArtBlur"></div>
         </div>
 
+        <!-- Clock: shown when nothing is playing (see Settings > Display) -->
+        <div id="wnpClock" class="d-none" aria-live="off">
+            <div class="wnpClockInner">
+                <div id="clockTime">--:--</div>
+                <div id="clockDate"></div>
+            </div>
+            <div id="clockNote"></div>
+        </div>
+
         <div class="wnpContainer">
 
             <div class="wnpMediaInfo">
@@ -162,6 +171,18 @@
                                 </button>
                             </li>
                             <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="display-tab" data-bs-toggle="tab"
+                                    data-bs-target="#display-pane" type="button" role="tab">
+                                    <i class="bi bi-clock me-2"></i>Display
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="sources-tab" data-bs-toggle="tab"
+                                    data-bs-target="#sources-pane" type="button" role="tab">
+                                    <i class="bi bi-collection-play me-2"></i>Sources
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
                                 <button class="nav-link" id="about-tab" data-bs-toggle="tab"
                                     data-bs-target="#about-pane" type="button" role="tab">
                                     <i class="bi bi-info-circle me-2"></i>About
@@ -266,6 +287,89 @@
                                     </div>
                                 </div>
 
+                            </div>
+
+                            <!-- Display Tab -->
+                            <div class="tab-pane fade" id="display-pane" role="tabpanel" aria-labelledby="display-tab"
+                                tabindex="0">
+                                <div class="mb-3">
+                                    <label class="form-label">Clock</label>
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="chkClockEnabled">
+                                        <label class="form-check-label" for="chkClockEnabled">Show a clock when nothing
+                                            is playing</label>
+                                    </div>
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="chkClockOnInput">
+                                        <label class="form-check-label" for="chkClockOnInput">Also while a TV/line
+                                            input is active (HDMI, optical, line-in, Bluetooth)</label>
+                                    </div>
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="chkClockDrift">
+                                        <label class="form-check-label" for="chkClockDrift">Move the clock a few
+                                            pixels every minute (OLED burn-in)</label>
+                                    </div>
+                                    <div class="mt-2">
+                                        <label class="form-label" for="clockAfterSeconds">Show clock after (seconds
+                                            stopped)</label>
+                                        <input class="form-control" type="number" id="clockAfterSeconds" min="0"
+                                            max="3600" step="1">
+                                    </div>
+                                    <div class="mt-2">
+                                        <label class="form-label" for="clockBlankAfterMinutes">Blank screen after
+                                            (minutes idle, 0 = never)</label>
+                                        <input class="form-control" type="number" id="clockBlankAfterMinutes" min="0"
+                                            max="1440" step="1">
+                                        <div class="form-text small text-muted">On an OLED a black page is effectively
+                                            off. Any playback wakes it.</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Sources Tab -->
+                            <div class="tab-pane fade" id="sources-pane" role="tabpanel" aria-labelledby="sources-tab"
+                                tabindex="0">
+                                <div class="mb-3">
+                                    <label class="form-label">Plex and Jellyfin sessions</label>
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="chkExternalEnabled">
+                                        <label class="form-check-label" for="chkExternalEnabled">Show what Plex or
+                                            Jellyfin is playing</label>
+                                    </div>
+                                    <div class="mt-2">
+                                        <label class="form-label" for="selExternalPriority">When both the WiiM and a
+                                            Plex/Jellyfin session are playing, show</label>
+                                        <select class="form-select" id="selExternalPriority">
+                                            <option value="wiim">the WiiM</option>
+                                            <option value="external">the Plex/Jellyfin session</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-text small text-muted">Plex played on the WiiM itself already
+                                        shows through the WiiM; use these for sessions on other players. Saved on the
+                                        server; environment variables override these fields.</div>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label" for="plexUrl">Plex server URL</label>
+                                    <input class="form-control" type="text" id="plexUrl"
+                                        placeholder="http://192.168.1.10:32400">
+                                    <label class="form-label mt-2" for="plexToken">Plex token</label>
+                                    <input class="form-control" type="password" id="plexToken" autocomplete="off">
+                                    <label class="form-label mt-2" for="plexPlayers">Only these Plex players
+                                        (comma-separated, empty = all)</label>
+                                    <input class="form-control" type="text" id="plexPlayers"
+                                        placeholder="WiiM Ultra, Caldera">
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label" for="jellyfinUrl">Jellyfin server URL</label>
+                                    <input class="form-control" type="text" id="jellyfinUrl"
+                                        placeholder="http://192.168.1.11:8096">
+                                    <label class="form-label mt-2" for="jellyfinApiKey">Jellyfin API key</label>
+                                    <input class="form-control" type="password" id="jellyfinApiKey" autocomplete="off">
+                                    <label class="form-label mt-2" for="jellyfinPlayers">Only these Jellyfin devices
+                                        (comma-separated, empty = all)</label>
+                                    <input class="form-control" type="text" id="jellyfinPlayers">
+                                </div>
+                                <button type="button" class="btn btn-secondary" id="btnSaveSources">Save sources</button>
                             </div>
 
                             <!-- About Tab -->

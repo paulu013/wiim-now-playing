@@ -610,3 +610,70 @@
     }
 
 }
+/* ------------------------
+ * Clock overlay (Settings > Display)
+ * Pure black: on an OLED this is effectively "off" apart from the digits.
+ */
+#wnpClock {
+    position: fixed;
+    inset: 0;
+    z-index: 1040; // above the app, below Bootstrap modals (1055)
+    background: #000;
+    color: #ede8df;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 2s ease;
+
+    .wnpClockInner {
+        text-align: center;
+    }
+
+    #clockTime {
+        font-size: 24vw;
+        line-height: .9;
+        font-weight: 300;
+        letter-spacing: -.05em;
+        font-variant-numeric: tabular-nums;
+
+        .colon {
+            display: inline-block;
+            transition: opacity .3s;
+        }
+
+        .colon.dim {
+            opacity: .25;
+        }
+    }
+
+    #clockDate {
+        margin-top: 2vw;
+        font-size: 2.6vw;
+        font-weight: 300;
+        color: #a39d92;
+    }
+
+    #clockNote {
+        position: absolute;
+        left: 6vw;
+        bottom: 6vw;
+        font-size: 1.6vw;
+        color: #5f5a52;
+    }
+}
+
+/* Idle blanking: everything black, clock included */
+body.wnp-blank {
+    background: #000;
+
+    #wnpApp,
+    #wnpClock {
+        visibility: hidden;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #wnpClock {
+        transition: none;
+    }
+}

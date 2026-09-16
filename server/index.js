@@ -32,6 +32,7 @@ const shell = require("./lib/shell.js"); // Shell command functionality
 const lib = require("./lib/lib.js"); // Generic functionality
 const lyrics = require("./lib/lyrics.js"); // Lyrics functionality
 const lyricsCache = require("./lib/lyricsCache.js");
+const external = require("./lib/external.js"); // Plex / Jellyfin sessions
 const log = require("debug")("index"); // See the documentation on debugging
 
 // For versionioning purposes
@@ -74,7 +75,15 @@ let serverSettings = { // Placeholder for current server settings
         "lyrics": {
             "enabled": false, // Whether the lyrics feature is enabled or not
             "offsetMs": 0 // The offset in milliseconds to apply to the synced lyrics, can be positive or negative, default is 0.
-        }
+        },
+        "clock": {
+            "enabled": true, // Show a clock when nothing is playing
+            "afterSeconds": 10, // ...after this many seconds of not playing
+            "onInput": false, // Also show the clock while an HDMI/optical/line-in/bluetooth input is active
+            "drift": true, // Nudge the clock a few pixels every minute (OLED burn-in)
+            "blankAfterMinutes": 0 // Blank the whole screen after this many idle minutes (0 = never)
+        },
+        "external": external.DEFAULTS // Plex / Jellyfin sources, see lib/external.js
     },
     "server": null, // Placeholder for the express server (port) information
     "version": { // Version information for the server and client
@@ -86,6 +95,11 @@ let serverSettings = { // Placeholder for current server settings
 // Interval placeholders:
 let pollState = null; // For the renderer state
 let pollMetadata = null; // For the renderer metadata
+let pollExternal = null; // For Plex / Jellyfin sessions
+
+// Device polling emits through this proxy: while an external (Plex/Jellyfin) session
+// is being shown, device state/metadata emits are held back. See lib/external.js.
+const ioDev = external.wrapIo(io, deviceInfo, serverSettings);
 
 // ===========================================================================
 // Get the server settings from local file storage, if any.
@@ -266,14 +280,16 @@ io.on("connection", (socket) => {
     log("No. of sockets:", io.sockets.sockets.size);
     if (io.sockets.sockets.size === 1) {
         // Start polling the selected device
-        pollMetadata = upnp.startMetadata(io, deviceInfo, serverSettings);
-        pollState = upnp.startState(io, deviceInfo, serverSettings);
+        pollMetadata = upnp.startMetadata(ioDev, deviceInfo, serverSettings);
+        pollState = upnp.startState(ioDev, deviceInfo, serverSettings);
+        pollExternal = external.start(io, deviceInfo, serverSettings);
     }
     else if (io.sockets.sockets.size >= 1) {
         // If new client, send current state and metadata 'immediately'
         // When sending directly after a reboot things get wonky
-        socket.emit("state", deviceInfo.state);
-        socket.emit("metadata", deviceInfo.metadata);
+        const cur = external.currentMessages(deviceInfo, serverSettings);
+        socket.emit("state", cur.state);
+        socket.emit("metadata", cur.metadata);
         if (deviceInfo.lyrics) {
             socket.emit("lyrics-get", deviceInfo.lyrics);
             lyrics.getLyricsCacheStats(io);
@@ -296,6 +312,7 @@ io.on("connection", (socket) => {
             // Stop polling the selected device
             upnp.stopPolling(pollState, "pollState");
             upnp.stopPolling(pollMetadata, "pollMetadata");
+            external.stop();
         }
 
     });
@@ -330,8 +347,8 @@ io.on("connection", (socket) => {
         log("Socket event", "device-set", msg);
         sockets.setDevice(io, deviceList, deviceInfo, serverSettings, msg);
         // Immediately get new metadata and state from new device
-        upnp.updateDeviceMetadata(io, deviceInfo, serverSettings);
-        upnp.updateDeviceState(io, deviceInfo, serverSettings);
+        upnp.updateDeviceMetadata(ioDev, deviceInfo, serverSettings);
+        upnp.updateDeviceState(ioDev, deviceInfo, serverSettings);
     });
 
     /**
@@ -341,7 +358,7 @@ io.on("connection", (socket) => {
      */
     socket.on("device-action", (msg) => {
         log("Socket event", "device-action", msg);
-        upnp.callDeviceAction(io, msg, deviceInfo, serverSettings);
+        upnp.callDeviceAction(ioDev, msg, deviceInfo, serverSettings);
     });
 
     /**
@@ -426,6 +443,38 @@ io.on("connection", (socket) => {
             }
 
         }
+    });
+
+    // ======================================
+    // Clock & external sources settings
+
+    /**
+     * Listener for feature settings updates (clock, external sources).
+     * Shallow-merges msg.features.clock / msg.features.external into the server settings and saves.
+     * @param {object} msg - { features: { clock: {...}, external: {...} } }
+     * @returns {undefined}
+     */
+    socket.on("features-settings", (msg) => {
+        log("Socket event", "features-settings", msg);
+        if (!msg || !msg.features) { return; }
+        if (msg.features.clock && typeof msg.features.clock === "object") {
+            serverSettings.features.clock = { ...serverSettings.features.clock, ...msg.features.clock };
+        }
+        if (msg.features.external && typeof msg.features.external === "object") {
+            const ext = msg.features.external;
+            serverSettings.features.external = {
+                ...serverSettings.features.external,
+                ...ext,
+                plex: { ...serverSettings.features.external.plex, ...(ext.plex || {}) },
+                jellyfin: { ...serverSettings.features.external.jellyfin, ...(ext.jellyfin || {}) }
+            };
+            // Restart external polling with the new config, if clients are connected
+            if (io.sockets.sockets.size > 0) {
+                pollExternal = external.start(io, deviceInfo, serverSettings);
+            }
+        }
+        lib.saveSettings(serverSettings);
+        sockets.getServerSettings(io, serverSettings);
     });
 
     // ======================================
