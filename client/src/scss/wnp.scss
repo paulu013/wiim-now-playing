@@ -1061,43 +1061,44 @@
         #clockWeather.clockWeather {
             margin: 0;
             color: var(--clock-fg);
+            line-height: 1; // box edges hug the glyphs, so the temp top lines up with the time
             text-shadow: 0 0 8px rgba(220, 239, 255, .45);
 
-            // Plain block flow (not flex): icon + temperature share the first line, the
-            // description drops to the next. This keeps the block's width equal to its visible
-            // text (no flex phantom width), so the time+weather pair centres accurately.
+            // Compact stack: temperature on top (its glyph top aligned to the time's top) with
+            // the weather icon directly below it. The description is disabled in this theme. A
+            // column flex avoids the wrap "phantom width" so the time+weather pair still centres.
             .wxNow {
-                display: block;
-
-                .bi {
-                    display: inline-block;
-                    vertical-align: baseline;
-                    margin-right: 1vw;
-                    color: var(--clock-fg); // icon matches the time colour
-                    font-size: 5vw;
-                }
+                display: flex;
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 1vw;
 
                 .wxTemp {
-                    // Seven-segment temperature, a bit smaller than the time.
-                    display: inline-block;
+                    order: 1; // top (its glyph top lines up with the time's top)
                     font-family: "DSEG7 Classic", monospace;
                     font-weight: 700;
-                    font-size: 6.5vw;
+                    font-size: 6.5vw; // a bit smaller than the time
+                    line-height: 1;
                     color: var(--clock-fg);
+                }
+
+                .bi {
+                    order: 2; // below the temperature
+                    font-size: 5vw;
+                    line-height: 1;
+                    color: var(--clock-fg); // icon matches the time colour
                 }
 
                 .wxLabel {
-                    // Seven-segment description on its own line under the temperature.
-                    display: block;
-                    font-family: "DSEG7 Classic", monospace;
-                    font-weight: 700;
-                    font-size: 3.2vw;
-                    letter-spacing: .04em;
-                    text-transform: uppercase; // DSEG7 renders upper-case letters most legibly
-                    color: var(--clock-fg);
+                    display: none; // description disabled in this theme (temp + icon only)
                 }
             }
         }
+    }
+
+    // When the time is slanted (italic DSEG face), slant the temperature to match. (fork)
+    &.seg-slant[data-theme="segment-bedside-wx"] #clockWeather .wxTemp {
+        font-style: italic;
     }
 
     &[data-theme="analog-night"] #clockDial {

@@ -1857,6 +1857,9 @@ WNP.renderSegments = function (main, theme, tag) {
     if (!el) { return; }
     var slant = this.clockCfg().segmentSlant;
     el.classList.toggle("slant", slant !== false); // default slanted
+    // Mirror the slant on the clock root so themes can italicise their seven-segment
+    // weather readout in step with the time (see segment-bedside-wx). (fork)
+    if (this.r.wnpClock) { this.r.wnpClock.classList.toggle("seg-slant", slant !== false); }
     var ghost = theme.ghost || 0;
     // Ghost = every glyph lit; digits -> 8, colon stays, spaces stay.
     var ghostText = main.replace(/[0-9]/g, "8");
