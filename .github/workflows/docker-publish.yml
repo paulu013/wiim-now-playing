@@ -3,7 +3,6 @@ name: Publish Docker image (GHCR)
 on:
   push:
     branches: [main]
-    tags: ['v*']
     # Only rebuild when something that affects the image changes (skips docs-only pushes
     # like CLAUDE.md / deploy/**). server/** covers the committed client build in server/public.
     paths:
@@ -12,7 +11,7 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/docker-publish.yml'
-  workflow_dispatch:   # manual trigger (e.g. to force a rebuild regardless of paths)
+  workflow_dispatch:   # manual trigger (e.g. to build a specific tag/release on demand)
 
 permissions:
   contents: read
@@ -45,7 +44,6 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
-            type=ref,event=tag
             type=sha,format=short
 
       - name: Build and push (multi-arch)
