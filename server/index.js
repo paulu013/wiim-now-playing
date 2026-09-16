@@ -129,16 +129,32 @@ const ioDev = external.wrapIo(io, deviceInfo, serverSettings);
 lib.getSettings(serverSettings);
 
 // ===========================================================================
-// Initial SSDP scan for devices.
-ssdp.scan(deviceList, serverSettings);
+// Device discovery. Normally via SSDP multicast, but SSDP can't cross VLANs — so
+// WIIM_LOCATION lets you point the server straight at the device descriptor URL
+// (e.g. http://192.168.30.20:49152/description.xml) and skip discovery entirely.
+// Everything after this (descriptor, AVTransport polling, LinkPlay) is unicast HTTP. (fork)
+if (process.env.WIIM_LOCATION) {
+    log("WIIM_LOCATION set, selecting device directly (no SSDP):", process.env.WIIM_LOCATION);
+    upnp.getDeviceDescription(deviceList, serverSettings, { LOCATION: process.env.WIIM_LOCATION });
+    // Re-seed periodically so a rebooted/late device still gets picked up (until one is selected).
+    setInterval(() => {
+        if (!serverSettings.selectedDevice || !serverSettings.selectedDevice.location) {
+            upnp.getDeviceDescription(deviceList, serverSettings, { LOCATION: process.env.WIIM_LOCATION });
+        }
+    }, 30000);
+}
+else {
+    // Initial SSDP scan for devices.
+    ssdp.scan(deviceList, serverSettings);
+}
 
 // Check after a while whether any device has been found.
 // Due to wifi initialisation delay the scan may have failed.
 // Not aware of a method of knowing whether wifi connection has been established fully.
 setTimeout(() => {
     log("Rescanning devices...");
-    // Start new device scan, if first scan failed...
-    if (deviceList.length === 0) {
+    // Start new device scan, if first scan failed... (skip when pinned via WIIM_LOCATION)
+    if (deviceList.length === 0 && !process.env.WIIM_LOCATION) {
         ssdp.scan(deviceList, serverSettings);
         // The client may not be aware of any devices and have an empty list, waiting for rescan results and send the device list again
         setTimeout(() => {

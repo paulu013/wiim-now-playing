@@ -1,0 +1,38 @@
+# Stack: nowplaying (WiiM Now Playing — paulu013 fork)
+# Copy this folder into the paulu013/homelab repo as: docker/nowplaying/
+#   - Portainer Git repo path: homelab/docker/nowplaying/docker-compose.yml
+#   - Secrets: /opt/homelab/docker/nowplaying/.env  (NOT in Git — see .env.example)
+#   - Pull auth: add a GHCR registry in Portainer (ghcr.io, user paulu013, read:packages PAT)
+#
+# Server runs on the server-VLAN Docker host and reaches the WiiM (IOT VLAN) over UNICAST
+# via WIIM_LOCATION — no SSDP/host-networking needed. Firewall: allow this host -> WiiM
+# TCP 49152 (UPnP) + 443 (LinkPlay). Bridge networking, so it can also be fronted by Traefik.
+services:
+  wnp:
+    image: ghcr.io/paulu013/wiim-now-playing:latest
+    container_name: wnp
+    env_file: .env
+    environment:
+      - PORT=80
+      - TZ=${TZ:-Europe/Amsterdam}
+    ports:
+      - "8099:80"                 # kiosk/browser: http://<docker-host>:8099
+    volumes:
+      - /srv/docker/nowplaying/data:/app/data
+    restart: unless-stopped
+    mem_limit: 256m
+    # --- Optional: front with Traefik like your other stacks (then you can drop `ports:`) ---
+    # networks: [frontend]
+    # labels:
+    #   traefik.enable: "true"
+    #   traefik.http.routers.nowplaying.rule: Host(`nowplaying.${DOMAIN}`)
+    #   traefik.http.routers.nowplaying.entrypoints: websecure
+    #   traefik.http.routers.nowplaying.tls: "true"
+    #   traefik.http.routers.nowplaying.tls.certresolver: letsencrypt
+    #   traefik.http.services.nowplaying.loadbalancer.server.port: "80"
+    #   traefik.constraint: proxy-public
+    #   # NB: do NOT add authentik@docker here — the kiosk browser can't complete SSO.
+
+# networks:
+#   frontend:
+#     external: true

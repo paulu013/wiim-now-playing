@@ -1,13 +1,23 @@
 ---
+# WiiM Now Playing (paulu013 fork).
+#
+# Default here uses bridge networking + a published port, and points the server at the
+# WiiM directly via WIIM_LOCATION (in .env) so the server can run on a different VLAN than
+# the device (unicast only — no SSDP multicast needed). Put secrets/config in a .env next
+# to this file (see .env.example).
+#
+# If instead you want automatic SSDP discovery (server on the SAME L2 as the WiiM), omit
+# WIIM_LOCATION and switch to `network_mode: host` (and drop the `ports:` mapping).
 services:
   wnp:
-    image: apwiggins/wiimnowplaying:latest #use tag like v1.6.3 for specific version
+    image: ghcr.io/paulu013/wiim-now-playing:latest # use a tag like v1.9.11 for a specific version
     container_name: wnp
-    network_mode: host # for SSDP discovery
+    env_file: .env
     environment:
-      - PORT=80 # defaults to port 80 unless PORT is set
-                # now runs rootless with a non-priviledged user,
-                # so no need to run on a high port
+      - PORT=80
+      - TZ=Europe/Amsterdam
+    ports:
+      - "8099:80" # browse/kiosk at http://<docker-host>:8099
     restart: unless-stopped
     volumes:
       - wnp-data:/app/data
