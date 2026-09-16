@@ -112,7 +112,7 @@ const pollPlex = async (cfg, artwork) => {
     const poster = isEp ? (best.grandparentThumb || best.parentThumb || best.thumb) : best.thumb;
     let artPath;
     if (artwork === "still") { artPath = best.thumb || poster; }
-    else if (artwork === "backdrop") { artPath = best.art || best.grandparentArt || poster; }
+    else if (artwork === "backdrop" || artwork === "clock") { artPath = best.art || best.grandparentArt || poster; }
     else { artPath = poster; } // poster (default fallback)
     const logoObj = (best.Image || []).find(i => i.type === "clearLogo");
     const logo = logoObj ? img(logoObj.url) : "";
@@ -190,7 +190,7 @@ const pollJellyfin = async (cfg, artwork) => {
     const jimg = (id, type, extra) => id ? `${base}/Items/${id}/Images/${type}?${extra || "fillHeight=1400"}` : "";
     let art;
     if (artwork === "still") { art = jimg(item.Id, "Primary"); }             // episode's own image = still
-    else if (artwork === "backdrop") { art = jimg(backdropId, "Backdrop/0", "fillWidth=2000") || jimg(posterId, "Primary"); }
+    else if (artwork === "backdrop" || artwork === "clock") { art = jimg(backdropId, "Backdrop/0", "fillWidth=2000") || jimg(posterId, "Primary"); }
     else { art = jimg(posterId, "Primary"); }                               // poster
     // Clear logo (series logo for episodes, item logo for movies) if present.
     let logo = "";

@@ -1252,6 +1252,29 @@ body.wnp-art-poster {
     }
 }
 
+/* "Clock on backdrop" artwork: the movie/show hero art as a full-screen background with the
+ * clock overlaid, the playback progress bar kept, and no now-playing text / transport buttons.
+ * (body.wnp-hero is also set, so #wnpHero shows and the square album art is hidden.) */
+body.wnp-art-clock {
+    // Let the hero backdrop show through the clock overlay.
+    #wnpClock,
+    #wnpClock.gradient {
+        background: transparent;
+    }
+
+    #wnpHeroLogo {
+        display: none; // the clock replaces the logo
+    }
+
+    .wnpMediaInfo {
+        display: none; // the clock replaces the now-playing text
+    }
+
+    .wnpFooter .btn-group.primary {
+        display: none; // no transport buttons — keep only the progress bar
+    }
+}
+
 /* Idle blanking: everything black, clock included */
 body.wnp-blank {
     background: #000;

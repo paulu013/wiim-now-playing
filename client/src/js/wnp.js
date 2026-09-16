@@ -801,10 +801,11 @@ WNP.setSocketDefinitions = function () {
         // Per-artwork layout hooks (external only): poster/backdrop get a large left-aligned
         // title, hide the device line, and move the source logo to the bottom-right. (fork)
         var extArtMode = msg.external ? artMode : "";
-        ["backdrop", "poster", "still"].forEach(function (m) {
+        ["backdrop", "poster", "still", "clock"].forEach(function (m) {
             document.body.classList.toggle("wnp-art-" + m, extArtMode === m);
         });
-        var heroOn = artMode === "backdrop" && Boolean(albumArtUri) && WNP.r.wnpHero;
+        // "clock" shows the clock over the backdrop (like backdrop, but the clock replaces the info).
+        var heroOn = (artMode === "backdrop" || artMode === "clock") && Boolean(albumArtUri) && WNP.r.wnpHero;
         document.body.classList.toggle("wnp-hero", Boolean(heroOn));
         // Only (re)set the backdrop/logo on a track change or when empty — the https
         // art URL carries a changing cache-buster, so setting it every tick would flicker.
@@ -1901,7 +1902,10 @@ WNP.startClock = function () {
         var idleClock = enabled && !activePlayback && (now - self.d.lastPlayingMs) >= afterMs;
         if (self.d.manualClock && self.d.manualClockUntil && now >= self.d.manualClockUntil) { self.d.manualClock = false; }
         if (idleClock) { self.d.manualClock = false; } // idle takes over; swipe state resets
-        var showClock = idleClock || self.d.manualClock;
+        // "Clock on backdrop" artwork mode: keep the clock shown over the hero art while a
+        // Plex/Jellyfin video plays (CSS makes the clock background transparent). (fork)
+        var clockOverHero = document.body.classList.contains("wnp-art-clock");
+        var showClock = idleClock || self.d.manualClock || clockOverHero;
         var blank = blankMs > 0 && (now - self.d.lastActivityMs) >= blankMs;
         var trans = (cfg.swipe && cfg.swipe.transition) || "fade";
         if (self.r.wnpClock.getAttribute("data-transition") !== trans) { self.r.wnpClock.setAttribute("data-transition", trans); }
