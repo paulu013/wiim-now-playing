@@ -11,7 +11,7 @@ WNP.s = {
     locPort: (location.port && location.port != "80" && location.port != "1234") ? location.port : "80",
     rndAlbumArtUri: "./img/fake-album-1.jpg",
     // Device selection
-    aDeviceUI: ["btnPrev", "btnPlay", "btnNext", "btnRefresh", "selDeviceChoices", "devName", "devNameHolder", "mediaTitle", "mediaSubTitle", "mediaArtist", "mediaAlbum", "mediaBitRate", "mediaBitDepth", "mediaSampleRate", "mediaQualityIdent", "devVol", "btnRepeat", "btnShuffle", "progressPlayed", "progressLeft", "progressPercent", "mediaSource", "albumArt", "bgAlbumArtBlur", "btnDevSelect", "oDeviceList", "btnDevPreset", "oPresetList", "btnDevVolume", "rVolume", "mediaLyrics", "lyricPrev", "lyricCurrent", "lyricNext", "lyricAfter", "alerts"],
+    aDeviceUI: ["btnPrev", "btnPlay", "btnStop", "btnNext", "btnRefresh", "selDeviceChoices", "devName", "devNameHolder", "mediaTitle", "mediaSubTitle", "mediaArtist", "mediaAlbum", "mediaBitRate", "mediaBitDepth", "mediaSampleRate", "mediaQualityIdent", "devVol", "btnRepeat", "btnShuffle", "progressPlayed", "progressLeft", "progressPercent", "mediaSource", "albumArt", "bgAlbumArtBlur", "btnDevSelect", "oDeviceList", "btnDevPreset", "oPresetList", "btnDevVolume", "rVolume", "mediaLyrics", "lyricPrev", "lyricCurrent", "lyricNext", "lyricAfter", "alerts"],
     // Server actions to be used in the app
     aServerUI: ["btnReboot", "btnUpdate", "btnShutdown", "btnReloadUI", "sServerUrlHostname", "sServerUrlIP", "sServerVersion", "sClientVersion", "chkLyricsEnabled", "lyricsCacheSize", "btnClearLyricsCache", "lyricsOffsetMs",
         "wnpClock", "clockTime", "clockDate", "clockNote", "clockWeather", "clockDial", "dialTicks", "dialNumbers", "dialBrand", "dialSub", "handHour", "handMinute", "handSecond", "clockSeg", "wnpMiniClock",
@@ -21,7 +21,7 @@ WNP.s = {
         "chkWeatherTemp", "chkWeatherForecast", "chkWeatherLabel", "weatherLocation", "selWeatherUnits", "weatherStatus",
         "selClockLocale", "chkSwipeEnabled", "selSwipeGesture", "selSwipeTransition", "swipeReturnSeconds",
         "wnpNightShift", "chkNightShift", "selNightShiftSchedule", "nightShiftFrom", "nightShiftTo", "nightShiftWarmth", "nightShiftWarmthValue", "nightShiftBrightness", "nightShiftBrightnessValue",
-        "chkExternalEnabled", "selExternalPriority", "selExternalArtwork", "plexUrl", "plexToken", "plexPlayers", "jellyfinUrl", "jellyfinApiKey", "jellyfinPlayers", "btnSaveSources",
+        "chkExternalEnabled", "selExternalPriority", "selExternalArtwork", "plexUrl", "plexToken", "plexPlayers", "plexUsers", "jellyfinUrl", "jellyfinApiKey", "jellyfinPlayers", "jellyfinUsers", "btnSaveSources",
         "wnpHero", "wnpHeroImg", "wnpHeroLogo"],
     // Default timeout for alerts in ms
     alertTimeoutMs: 5000
@@ -53,7 +53,11 @@ WNP.d = {
     manualClockUntil: 0, // ...and auto-return deadline (ms epoch, 0 = stay)
     swipeStart: null, // Pointer start for swipe detection
     cachedClockCfg: null, // Last-known clock config (from localStorage) used before server-settings arrives
-    isExternal: false // Whether the current session is a Plex/Jellyfin source (routes play/pause, hides N/A controls)
+    isExternal: false, // Whether the current session is a Plex/Jellyfin source (routes play/pause, hides N/A controls)
+    settingsOpen: false, // Whether the settings modal is open (guards manual-save fields from being clobbered by broadcasts)
+    progAnchor: null, // Last known playback position anchor for smooth local progress interpolation
+    progressTimer: null, // Local progress ticker interval
+    populateSourcesOnce: false // One-shot: repopulate the Sources form on the next server-settings (set on modal open)
 };
 
 // Reference placeholders.
@@ -88,6 +92,9 @@ WNP.Init = function () {
 
     // Clock overlay (see Settings > Display)
     this.startClock();
+
+    // Smoothly advance the progress bar between polls (no extra API calls)
+    this.startProgressTicker();
 
     // Initial calls, wait a bit for socket to start
     setTimeout(() => {
@@ -139,33 +146,19 @@ WNP.setUIListeners = function () {
     // ------------------------------------------------
     // Player buttons
 
-    // Previous button
-    this.r.btnPrev.addEventListener("click", function () {
-        var wnpAction = this.getAttribute("wnp-action");
-        if (wnpAction) {
-            this.disabled = true;
-            socket.emit("device-action", wnpAction);
-        }
-    });
-
-    // Play/Pause/Stop button — routed to the external source for Plex/Jellyfin
-    // sessions, otherwise to the WiiM device. (fork)
-    this.r.btnPlay.addEventListener("click", function () {
+    // Transport buttons — routed to the external source for Plex/Jellyfin sessions,
+    // otherwise to the WiiM device. (fork)
+    var transportClick = function () {
         var wnpAction = this.getAttribute("wnp-action");
         if (wnpAction) {
             this.disabled = true;
             socket.emit(WNP.d.isExternal ? "external-action" : "device-action", wnpAction);
         }
-    });
-
-    // Next button
-    this.r.btnNext.addEventListener("click", function () {
-        var wnpAction = this.getAttribute("wnp-action");
-        if (wnpAction) {
-            this.disabled = true;
-            socket.emit("device-action", wnpAction);
-        }
-    });
+    };
+    this.r.btnPrev.addEventListener("click", transportClick);
+    this.r.btnPlay.addEventListener("click", transportClick);
+    this.r.btnNext.addEventListener("click", transportClick);
+    if (this.r.btnStop) { this.r.btnStop.addEventListener("click", transportClick); }
 
     // ------------------------------------------------
     // Device control inputs (only for default GUI, not TV mode)
@@ -246,7 +239,8 @@ WNP.setUIListeners = function () {
     // (e.g. the clock switch looking off when it is actually on). (fork)
     var settingsModal = document.getElementById("settingsModal");
     if (settingsModal) {
-        settingsModal.addEventListener("show.bs.modal", function () { socket.emit("server-settings"); });
+        settingsModal.addEventListener("show.bs.modal", function () { WNP.d.settingsOpen = true; WNP.d.populateSourcesOnce = true; socket.emit("server-settings"); });
+        settingsModal.addEventListener("hidden.bs.modal", function () { WNP.d.settingsOpen = false; });
     }
     // Night shift settings
     if (this.r.chkNightShift) {
@@ -299,8 +293,8 @@ WNP.setUIListeners = function () {
                         enabled: WNP.r.chkExternalEnabled.checked,
                         priority: WNP.r.selExternalPriority.value,
                         artwork: WNP.r.selExternalArtwork.value,
-                        plex: { url: WNP.r.plexUrl.value.trim(), token: WNP.r.plexToken.value.trim(), players: WNP.r.plexPlayers.value },
-                        jellyfin: { url: WNP.r.jellyfinUrl.value.trim(), apiKey: WNP.r.jellyfinApiKey.value.trim(), players: WNP.r.jellyfinPlayers.value }
+                        plex: { url: WNP.r.plexUrl.value.trim(), token: WNP.r.plexToken.value.trim(), players: WNP.r.plexPlayers.value, users: WNP.r.plexUsers.value },
+                        jellyfin: { url: WNP.r.jellyfinUrl.value.trim(), apiKey: WNP.r.jellyfinApiKey.value.trim(), players: WNP.r.jellyfinPlayers.value, users: WNP.r.jellyfinUsers.value }
                     }
                 }
             });
@@ -495,18 +489,24 @@ WNP.setSocketDefinitions = function () {
         WNP.applyMiniClock();
         WNP.renderWeather(); // weather may have arrived before settings; (re)render now that we know if it's enabled
 
-        // External sources settings
+        // External sources settings. These save only on the "Save sources" button, so
+        // don't repopulate them while the modal is open — a background server-settings
+        // broadcast (e.g. the ~10s rescan, or another auto-save) would otherwise wipe an
+        // in-progress edit such as the Plex token before it is saved. (fork)
         var ext = (msg && msg.features && msg.features.external) ? msg.features.external : {};
-        if (WNP.r.chkExternalEnabled) {
+        if (WNP.r.chkExternalEnabled && (!WNP.d.settingsOpen || WNP.d.populateSourcesOnce)) {
+            WNP.d.populateSourcesOnce = false; // consumed: later background broadcasts won't clobber edits
             WNP.r.chkExternalEnabled.checked = ext.enabled !== false;
             WNP.r.selExternalPriority.value = ext.priority || "wiim";
             if (WNP.r.selExternalArtwork) { WNP.r.selExternalArtwork.value = ext.artwork || "backdrop"; }
             WNP.r.plexUrl.value = (ext.plex && ext.plex.url) || "";
             WNP.r.plexToken.value = (ext.plex && ext.plex.token) || "";
             WNP.r.plexPlayers.value = (ext.plex && ext.plex.players) ? [].concat(ext.plex.players).join(", ") : "";
+            if (WNP.r.plexUsers) { WNP.r.plexUsers.value = (ext.plex && ext.plex.users) ? [].concat(ext.plex.users).join(", ") : ""; }
             WNP.r.jellyfinUrl.value = (ext.jellyfin && ext.jellyfin.url) || "";
             WNP.r.jellyfinApiKey.value = (ext.jellyfin && ext.jellyfin.apiKey) || "";
             WNP.r.jellyfinPlayers.value = (ext.jellyfin && ext.jellyfin.players) ? [].concat(ext.jellyfin.players).join(", ") : "";
+            if (WNP.r.jellyfinUsers) { WNP.r.jellyfinUsers.value = (ext.jellyfin && ext.jellyfin.users) ? [].concat(ext.jellyfin.users).join(", ") : ""; }
         }
 
         // Lyrics enabled/disabled
@@ -626,12 +626,21 @@ WNP.setSocketDefinitions = function () {
             WNP.d.lyricsLastRelTime = relTime; // Update the last known RelTime for lyrics timing
             WNP.d.lyricsLastTimeStampDiffMs = timeStampDiffMs; // Update the last known timestamp difference for lyrics timing
 
-            // Get current player progress and set UI elements accordingly.
-            var oPlayerProgress = WNP.getPlayerProgress(relTime, trackDuration, timeStampDiff, msg.CurrentTransportState);
-            WNP.r.progressPlayed.children[0].innerText = oPlayerProgress.played;
-            WNP.r.progressLeft.children[0].innerText = (oPlayerProgress.left != "") ? "-" + oPlayerProgress.left : "";
-            WNP.r.progressPercent.setAttribute("aria-valuenow", oPlayerProgress.percent)
-            WNP.r.progressPercent.children[0].setAttribute("style", "width:" + oPlayerProgress.percent + "%");
+            // Anchor the progress so a local ticker advances it smoothly between polls
+            // (fluent bar, no extra API calls). See WNP.renderProgress / startProgressTicker. (fork)
+            var newBase = WNP.convertToSeconds(relTime) + timeStampDiff;
+            var durSec = WNP.convertToSeconds(trackDuration);
+            var nowPlaying = msg.CurrentTransportState === "PLAYING";
+            var prevAnchor = WNP.d.progAnchor;
+            // Ignore tiny backward corrections (whole-second RelTime vs. fractional
+            // interpolation / poll jitter) so the bar never visibly steps back. Real
+            // seeks (>3s) and track changes (duration change) still snap. (fork)
+            if (prevAnchor && nowPlaying && prevAnchor.playing && prevAnchor.durationSec === durSec) {
+                var curPos = prevAnchor.baseSec + (Date.now() - prevAnchor.atMs) / 1000;
+                if (newBase < curPos && (curPos - newBase) < 3) { newBase = curPos; }
+            }
+            WNP.d.progAnchor = { baseSec: newBase, durationSec: durSec, playing: nowPlaying, atMs: Date.now() };
+            WNP.renderProgress();
 
             WNP.updateLyricsProgress(relTime, timeStampDiffMs, "state tick");
             setTimeout(function () { // Do another update half tick (state timeout) to make sure the progress is updated and the lyrics are in sync.
@@ -679,12 +688,12 @@ WNP.setSocketDefinitions = function () {
             WNP.r.btnNext.disabled = false;
         }
 
-        // External (Plex/Jellyfin) session: shuffle/prev/next/repeat don't apply, so
-        // hide them; play/pause stays and is routed to the external source. (fork)
+        // External (Plex/Jellyfin) session: shuffle/repeat don't apply (hidden) and a
+        // stop button is shown; prev/play/next/stop route to the external source. Driven
+        // by a body class + CSS so it can't flicker when other code rewrites button
+        // classes (e.g. the LoopMode block). (fork)
         WNP.d.isExternal = Boolean(msg.external);
-        [WNP.r.btnShuffle, WNP.r.btnPrev, WNP.r.btnNext, WNP.r.btnRepeat].forEach(function (btn) {
-            if (btn) { btn.classList.toggle("d-none", WNP.d.isExternal); }
-        });
+        document.body.classList.toggle("wnp-external", WNP.d.isExternal);
 
     });
 
@@ -798,8 +807,8 @@ WNP.setSocketDefinitions = function () {
             WNP.r.rVolume.value = WNP.r.devVol.innerText;
         }
 
-        // Loop mode status
-        if (msg.LoopMode) {
+        // Loop mode status (not applicable to external Plex/Jellyfin sessions)
+        if (msg.LoopMode && !WNP.d.isExternal) {
             switch (msg.LoopMode) {
                 case "5": // repeat-1 | shuffle
                     WNP.r.btnRepeat.className = "btn btn-outline-success";
@@ -1050,6 +1059,41 @@ WNP.getPlayerProgress = function (relTime, trackDuration, timeStampDiff, current
             percent: 0
         };
     };
+};
+
+/**
+ * Render the progress bar from the last state anchor, extrapolating the played
+ * position from elapsed wall-clock time while playing. Called by the state handler
+ * and by a local ticker so the bar is fluent between polls (no extra API calls). (fork)
+ */
+WNP.renderProgress = function () {
+    var a = this.d.progAnchor;
+    if (!a || !this.r.progressPercent) { return; }
+    var pos = a.baseSec + (a.playing ? (Date.now() - a.atMs) / 1000 : 0);
+    var dur = a.durationSec, played, left, percent;
+    if (dur > 0) {
+        pos = Math.max(0, Math.min(pos, dur));
+        played = this.convertToMinutes(pos);
+        left = "-" + this.convertToMinutes(dur - pos);
+        percent = ((pos / dur) * 100).toFixed(1);
+    } else if (dur === 0 && a.playing) {
+        played = "Live"; left = ""; percent = 100;
+    } else {
+        played = "Paused"; left = ""; percent = 0;
+    }
+    this.r.progressPlayed.children[0].innerText = played;
+    this.r.progressLeft.children[0].innerText = left;
+    this.r.progressPercent.setAttribute("aria-valuenow", percent);
+    this.r.progressPercent.children[0].setAttribute("style", "width:" + percent + "%");
+};
+
+/** Tick the progress bar locally so it moves smoothly between polls. */
+WNP.startProgressTicker = function () {
+    var self = this;
+    if (this.d.progressTimer) { clearInterval(this.d.progressTimer); }
+    this.d.progressTimer = setInterval(function () {
+        if (self.d.progAnchor && self.d.progAnchor.playing) { self.renderProgress(); }
+    }, 250);
 };
 
 /**

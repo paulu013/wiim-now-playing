@@ -123,6 +123,10 @@
                             <button id="btnPlay" type="button" class="btn btn-outline-light" wnp-action="Play">
                                 <i class="bi bi-play-circle-fill"></i>
                             </button>
+                            <!-- Stop (external Plex/Jellyfin only) -->
+                            <button id="btnStop" type="button" class="btn btn-outline-light" wnp-action="Stop">
+                                <i class="bi bi-stop-circle-fill"></i>
+                            </button>
                             <!-- Skip to end|Next -->
                             <button id="btnNext" type="button" class="btn btn-outline-light" wnp-action="Next" disabled>
                                 <i class="bi bi-skip-end-fill"></i>
@@ -652,6 +656,11 @@
                                         (comma-separated, empty = all)</label>
                                     <input class="form-control" type="text" id="plexPlayers"
                                         placeholder="WiiM Ultra, Caldera">
+                                    <label class="form-label mt-2" for="plexUsers">Only these Plex users
+                                        (comma-separated, empty = all)</label>
+                                    <input class="form-control" type="text" id="plexUsers" placeholder="stan">
+                                    <div class="form-text small text-muted">Set a player and/or user to ignore other
+                                        people's playback on the server.</div>
                                 </div>
                                 <div class="mb-3">
                                     <label class="form-label" for="jellyfinUrl">Jellyfin server URL</label>
@@ -662,6 +671,9 @@
                                     <label class="form-label mt-2" for="jellyfinPlayers">Only these Jellyfin devices
                                         (comma-separated, empty = all)</label>
                                     <input class="form-control" type="text" id="jellyfinPlayers">
+                                    <label class="form-label mt-2" for="jellyfinUsers">Only these Jellyfin users
+                                        (comma-separated, empty = all)</label>
+                                    <input class="form-control" type="text" id="jellyfinUsers">
                                 </div>
                                 <button type="button" class="btn btn-secondary" id="btnSaveSources">Save sources</button>
                             </div>

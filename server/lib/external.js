@@ -22,8 +22,8 @@ const DEFAULTS = {
     priority: "wiim",
     pollMs: 2000,
     artwork: "backdrop", // "backdrop" (full-screen hero + logo) | "poster" | "still"
-    plex: { url: "", token: "", players: [] },
-    jellyfin: { url: "", apiKey: "", players: [] }
+    plex: { url: "", token: "", players: [], users: [] },
+    jellyfin: { url: "", apiKey: "", players: [], users: [] }
 };
 
 let current = null;      // Normalised external session, or null
@@ -46,12 +46,16 @@ const getConfig = (serverSettings) => {
     if (process.env.PLEX_URL) cfg.plex.url = process.env.PLEX_URL;
     if (process.env.PLEX_TOKEN) cfg.plex.token = process.env.PLEX_TOKEN;
     if (process.env.PLEX_PLAYERS) cfg.plex.players = csv(process.env.PLEX_PLAYERS);
+    if (process.env.PLEX_USERS) cfg.plex.users = csv(process.env.PLEX_USERS);
     if (process.env.JELLYFIN_URL) cfg.jellyfin.url = process.env.JELLYFIN_URL;
     if (process.env.JELLYFIN_API_KEY) cfg.jellyfin.apiKey = process.env.JELLYFIN_API_KEY;
     if (process.env.JELLYFIN_PLAYERS) cfg.jellyfin.players = csv(process.env.JELLYFIN_PLAYERS);
+    if (process.env.JELLYFIN_USERS) cfg.jellyfin.users = csv(process.env.JELLYFIN_USERS);
     if (process.env.EXTERNAL_PRIORITY) cfg.priority = process.env.EXTERNAL_PRIORITY;
     if (typeof cfg.plex.players === "string") cfg.plex.players = csv(cfg.plex.players);
+    if (typeof cfg.plex.users === "string") cfg.plex.users = csv(cfg.plex.users);
     if (typeof cfg.jellyfin.players === "string") cfg.jellyfin.players = csv(cfg.jellyfin.players);
+    if (typeof cfg.jellyfin.users === "string") cfg.jellyfin.users = csv(cfg.jellyfin.users);
     return cfg;
 };
 
@@ -89,11 +93,14 @@ const pollPlex = async (cfg, artwork) => {
     }
     const PLEX_TYPES = ["track", "movie", "episode", "clip"]; // music + video
     const players = cfg.players.map(p => p.toLowerCase());
+    const users = (cfg.users || []).map(u => u.toLowerCase());
     let best = null;
     for (const it of items) {
         if (!PLEX_TYPES.includes(it.type)) continue;
         const player = it.Player || {};
+        const user = it.User || {};
         if (players.length && !players.includes((player.title || "").toLowerCase())) continue;
+        if (users.length && !users.includes((user.title || "").toLowerCase())) continue; // restrict to specific account(s)
         if (player.state === "playing") { best = it; break; }
         if (player.state === "paused" && !best) best = it;
     }
@@ -124,10 +131,13 @@ const pollPlex = async (cfg, artwork) => {
         album = best.parentTitle || "";
         year = best.parentYear || best.year || null;
     }
+    // A client can be remote-controlled only if it advertises the "playback" capability.
+    const controllable = /(^|,)\s*playback\s*(,|$)/.test((best.Player && best.Player.protocolCapabilities) || "");
     return {
         source: "Plex",
         kind: best.type, // track | movie | episode | clip
         controlId: (best.Player && best.Player.machineIdentifier) || "", // target client for remote play/pause
+        controllable,
         state: best.Player.state === "playing" ? "PLAYING" : "PAUSED_PLAYBACK",
         title, artist, album, year,
         art: img(artPath),
@@ -157,11 +167,13 @@ const pollJellyfin = async (cfg, artwork) => {
     }
     const JF_TYPES = ["Audio", "Movie", "Episode", "Video", "MusicVideo"]; // music + video
     const players = cfg.players.map(p => p.toLowerCase());
+    const users = (cfg.users || []).map(u => u.toLowerCase());
     let best = null;
     for (const s of sessions) {
         const item = s.NowPlayingItem;
         if (!item || !JF_TYPES.includes(item.Type)) continue;
         if (players.length && !players.includes((s.DeviceName || "").toLowerCase())) continue;
+        if (users.length && !users.includes((s.UserName || "").toLowerCase())) continue; // restrict to specific user(s)
         const paused = s.PlayState && s.PlayState.IsPaused;
         if (!paused) { best = s; break; }
         if (!best) best = s;
@@ -203,6 +215,7 @@ const pollJellyfin = async (cfg, artwork) => {
         source: "Jellyfin",
         kind: isEpisode ? "episode" : ((item.Type === "Audio" || item.Type === "MusicVideo") ? "track" : "movie"),
         controlId: best.Id || "", // session id for remote play/pause
+        controllable: Boolean(best.SupportsRemoteControl),
         state: ps.IsPaused ? "PAUSED_PLAYBACK" : "PLAYING",
         title, artist, album, year,
         art,
@@ -238,7 +251,8 @@ const toMetadata = (s) => {
             "wnp:rating": s.rating || "",
             "wnp:kind": s.kind || "", // track | movie | episode | clip -> client hides audio-quality for video
             "wnp:logo": s.logo || "", // clear title logo (for the backdrop-hero layout)
-            "wnp:artwork": s.artwork || "poster" // backdrop | poster | still -> client picks the layout
+            "wnp:artwork": s.artwork || "poster", // backdrop | poster | still -> client picks the layout
+            "wnp:controllable": s.controllable ? "1" : "" // whether the source accepts remote play/pause
 
         },
         RelTime: hms(s.position),
@@ -293,22 +307,39 @@ const getCurrent = () => current;
  * Plex control is best-effort (needs the client's Plex Companion / "advertise as
  * player" enabled); Jellyfin uses the documented Sessions command API.
  */
+let plexCmdId = 0;
 const control = async (serverSettings, action) => {
     if (!current || !current.controlId) { log("control: no controllable session"); return; }
     const cfg = getConfig(serverSettings);
     try {
         if (current.source === "Plex") {
             const base = cfg.plex.url.replace(/\/$/, "");
-            const cmd = { Play: "play", Pause: "pause", Stop: "stop" }[action] || "playPause";
-            const url = `${base}/player/playback/${cmd}?X-Plex-Token=${encodeURIComponent(cfg.plex.token)}`
-                + `&X-Plex-Target-Client-Identifier=${encodeURIComponent(current.controlId)}&commandID=1`;
-            await fetch(url, { headers: { "X-Plex-Client-Identifier": "wiim-now-playing", "X-Plex-Device-Name": "WNP", Accept: "application/json" } });
+            const cmd = { Play: "play", Pause: "pause", Stop: "stop", Next: "skipNext", Previous: "skipPrevious" }[action] || "playPause";
+            plexCmdId += 1;
+            // Plex Companion remote control: the PMS relays to the target client. Needs the
+            // client to support remote control ("Advertise as player"). Best-effort.
+            const url = `${base}/player/playback/${cmd}?type=video&commandID=${plexCmdId}`
+                + `&X-Plex-Target-Client-Identifier=${encodeURIComponent(current.controlId)}`
+                + `&X-Plex-Token=${encodeURIComponent(cfg.plex.token)}`;
+            const r = await fetch(url, {
+                headers: {
+                    "X-Plex-Target-Client-Identifier": current.controlId,
+                    "X-Plex-Client-Identifier": "wiim-now-playing",
+                    "X-Plex-Device-Name": "WiiM Now Playing",
+                    "X-Plex-Product": "WiiM Now Playing",
+                    "X-Plex-Version": "1.0",
+                    Accept: "application/json"
+                }
+            });
+            log("plex control", cmd, "target", current.controlId, "->", r.status, url);
+            log("plex control response:", (await r.text()).slice(0, 300));
         } else if (current.source === "Jellyfin") {
             const base = cfg.jellyfin.url.replace(/\/$/, "");
-            const cmd = { Play: "Unpause", Pause: "Pause", Stop: "Stop" }[action] || "PlayPause";
-            await fetch(`${base}/Sessions/${encodeURIComponent(current.controlId)}/Playing/${cmd}`, {
+            const cmd = { Play: "Unpause", Pause: "Pause", Stop: "Stop", Next: "NextTrack", Previous: "PreviousTrack" }[action] || "PlayPause";
+            const r = await fetch(`${base}/Sessions/${encodeURIComponent(current.controlId)}/Playing/${cmd}`, {
                 method: "POST", headers: { Authorization: `MediaBrowser Token="${cfg.jellyfin.apiKey}"` }
             });
+            log("jellyfin control", cmd, "->", r.status);
         }
     } catch (e) { log("control failed:", e.message); }
 };

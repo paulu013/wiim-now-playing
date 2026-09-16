@@ -206,6 +206,11 @@
         #progressPercent {
             height: 2px;
             --bs-bg-opacity: .5;
+
+            // Glide the bar between the 250ms progress ticks so it looks continuous.
+            .progress-bar {
+                transition: width .25s linear;
+            }
         }
 
         .btn-group.primary {
@@ -1099,6 +1104,24 @@ body.wnp-clock-on {
     &.controls-active .wnpFooter .btn-group.secondary {
         opacity: 1;
         pointer-events: auto;
+    }
+}
+
+/* Transport controls for external (Plex/Jellyfin) sessions: hide shuffle/repeat and
+ * show a stop button. Body-class driven so button className rewrites (LoopMode) can't
+ * flicker the visibility. */
+#btnStop {
+    display: none;
+}
+
+body.wnp-external {
+    .btn-group.primary #btnShuffle,
+    .btn-group.primary #btnRepeat {
+        display: none;
+    }
+
+    #btnStop {
+        display: inline-block;
     }
 }
 
