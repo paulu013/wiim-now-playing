@@ -700,9 +700,10 @@
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 2vw;
-        // Burn-in drift moves only the content, not the background. (fork)
-        transform: var(--drift);
+        gap: var(--clock-gap, 2vw);
+        // Dev-layout position offset composes with the burn-in drift; both move the
+        // content only, never the full-screen background. (fork)
+        transform: translate(var(--clock-x, 0vw), var(--clock-y, 0vh)) var(--drift);
         transition: transform .6s cubic-bezier(.2, .8, .2, 1);
     }
 
@@ -716,7 +717,7 @@
     }
 
     #clockTime {
-        font-size: 24vw;
+        font-size: calc(24vw * var(--clock-time-scale, 1));
         line-height: .9;
         font-weight: 300;
         letter-spacing: -.05em;
@@ -730,7 +731,7 @@
 
     #clockDate {
         margin-top: 2vw;
-        font-size: 2.6vw;
+        font-size: calc(2.6vw * var(--clock-date-scale, 1));
         font-weight: 300;
         color: var(--clock-fg2);
     }
@@ -738,8 +739,8 @@
     // ---- analog
     .clockAnalog {
         display: none;
-        width: 62vh;
-        height: 62vh;
+        width: calc(62vh * var(--clock-dial-scale, 1));
+        height: calc(62vh * var(--clock-dial-scale, 1));
     }
 
     &[data-kind="analog"] .clockAnalog {
@@ -838,7 +839,7 @@
 
     &[data-kind="segment"] #clockDate {
         margin-top: 0;
-        font-size: 2.2vw;
+        font-size: calc(2.2vw * var(--clock-date-scale, 1));
         letter-spacing: .08em;
     }
 
@@ -847,7 +848,7 @@
         display: inline-block;
         font-family: "DSEG7 Classic", monospace;
         font-weight: 700;
-        font-size: 20vw;
+        font-size: calc(20vw * var(--clock-time-scale, 1));
         line-height: 1;
         color: var(--clock-fg);
         white-space: nowrap;
