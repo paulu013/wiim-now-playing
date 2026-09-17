@@ -29,6 +29,7 @@ const DEFAULTS = {
 
 let current = null;      // Normalised external session, or null
 let pollTimer = null;
+const plexLogoCache = new Map(); // Plex ratingKey -> clearLogo URL ("" = none). /status/sessions omits the Image[] array, so we fetch the full metadata once per item and cache it. (fork)
 
 // ---------------------------------------------------------------- helpers
 
@@ -115,8 +116,30 @@ const pollPlex = async (cfg, artwork) => {
     if (artwork === "still") { artPath = best.thumb || poster; }
     else if (artwork === "backdrop" || artwork === "clock") { artPath = best.art || best.grandparentArt || poster; }
     else { artPath = poster; } // poster (default fallback)
-    const logoObj = (best.Image || []).find(i => i.type === "clearLogo");
-    const logo = logoObj ? img(logoObj.url) : "";
+    // Clear logo: /status/sessions omits the Image[] array, so fall back to the full
+    // library-metadata endpoint and cache the result per ratingKey. (fork)
+    let logo = "";
+    const inlineLogo = (best.Image || []).find(i => i.type === "clearLogo");
+    if (inlineLogo) {
+        logo = img(inlineLogo.url);
+    } else if (best.ratingKey != null) {
+        const rk = String(best.ratingKey);
+        if (plexLogoCache.has(rk)) {
+            logo = plexLogoCache.get(rk);
+        } else {
+            try {
+                const meta = await fetchJson(`${base}/library/metadata/${encodeURIComponent(rk)}?X-Plex-Token=${encodeURIComponent(cfg.token)}`);
+                const m0 = meta && meta.MediaContainer && meta.MediaContainer.Metadata && meta.MediaContainer.Metadata[0];
+                const lo = m0 && (m0.Image || []).find(i => i.type === "clearLogo");
+                logo = lo ? img(lo.url) : "";
+            } catch (e) {
+                log("plex logo", e.message);
+                logo = "";
+            }
+            if (plexLogoCache.size > 200) { plexLogoCache.clear(); } // bound the cache
+            plexLogoCache.set(rk, logo);
+        }
+    }
 
     // Map to the music-shaped now-playing fields per content type.
     let title = best.title || "", artist = "", album = "", year = null;
