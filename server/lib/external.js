@@ -22,6 +22,7 @@ const DEFAULTS = {
     priority: "wiim",
     pollMs: 2000,
     artwork: "backdrop", // "backdrop" (full-screen hero + logo) | "poster" | "still"
+    clearLogo: true, // Show the clear logo (Plex clearLogo / Jellyfin Logo) instead of the plain-text title when available
     plex: { url: "", token: "", players: [], users: [] },
     jellyfin: { url: "", apiKey: "", players: [], users: [] }
 };
@@ -196,6 +197,7 @@ const pollJellyfin = async (cfg, artwork) => {
     let logo = "";
     if (isEpisode && item.ParentLogoItemId) { logo = jimg(item.ParentLogoItemId, "Logo", "fillHeight=400"); }
     else if (item.ImageTags && item.ImageTags.Logo) { logo = jimg(item.Id, "Logo", "fillHeight=400"); }
+    else if (item.AlbumId) { logo = jimg(item.AlbumId, "Logo", "fillHeight=400"); } // music: album logo (may 404 -> client falls back to the title)
 
     // Map to the music-shaped now-playing fields per content type.
     let title = item.Name || "", artist = "", album = "", year = null;
