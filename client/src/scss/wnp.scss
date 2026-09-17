@@ -1153,10 +1153,11 @@ html.wnp-nightshift {
     &.size-l { font-size: 5vw; }
 }
 
-/* Auto-hiding controls while the clock covers the screen.
- * The top-right toolbar (TV/fullscreen + settings) floats above the clock and
- * fades in on mouse/touch movement (body.controls-active, set from JS). */
-body.wnp-clock-on {
+/* Auto-hiding controls while the clock or full-screen artwork covers the screen.
+ * The top-right toolbar (TV/fullscreen + settings) floats above it and fades in on
+ * mouse/touch movement (body.controls-active, set from JS). */
+body.wnp-clock-on,
+body.wnp-hero {
     .wnpFooter .btn-group.secondary {
         position: fixed;
         top: 2.5vh;
