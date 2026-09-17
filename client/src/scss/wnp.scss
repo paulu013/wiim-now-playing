@@ -1280,6 +1280,18 @@ body.wnp-hide-progress .wnpFooter {
 }
 body.wnp-hide-source #mediaSource { display: none; } // hide the Plex/Jellyfin source logo
 
+/* Progress-off offsets: bottom-anchored artwork elements drop lower once the progress
+ * bar / footer is hidden, since they no longer need to clear it. Separate from the
+ * progress-on offsets so tuning one state never leaks into the other. Both are tunable
+ * in the Layout (dev) tab. Specificity beats the base #wnpHero / wnp-art-* rules. (fork) */
+body.wnp-hide-progress #wnpHero #wnpHeroLogo {
+    bottom: var(--art-logo-bottom-hidden, 3vh);
+}
+body.wnp-hide-progress.wnp-art-backdrop #mediaSource,
+body.wnp-hide-progress.wnp-art-poster #mediaSource {
+    bottom: var(--art-source-bottom-hidden, var(--art-source-bottom, 3vh));
+}
+
 /* Settings fields supplied by an environment variable are shown read-only. */
 .wnp-env-locked {
     opacity: .6;

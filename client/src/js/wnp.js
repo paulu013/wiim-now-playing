@@ -947,15 +947,12 @@ WNP.setSocketDefinitions = function () {
         if (heroLogoMode) {
             if (WNP.r.wnpHeroLogo) {
                 setLogoImg(WNP.r.wnpHeroLogo);
-                // Sit just above the footer; measure it so the logo clears both the short /tv
-                // footer and the taller normal-view footer. Footer hidden -> drop lower. (fork)
-                if (extCfg.showProgress === false) {
-                    WNP.r.wnpHeroLogo.style.setProperty("--art-logo-bottom-auto", "3vh");
-                } else {
-                    var ft = document.querySelector(".wnpFooter");
-                    var fh = (ft && ft.offsetParent !== null) ? ft.offsetHeight : 0;
-                    WNP.r.wnpHeroLogo.style.setProperty("--art-logo-bottom-auto", (fh + 24) + "px");
-                }
+                // Progress ON: sit just above the footer; measure it so the logo clears both
+                // the short /tv footer and the taller normal-view footer. Progress OFF: the
+                // drop-lower offset is handled in CSS (--art-logo-bottom-hidden). (fork)
+                var ft = document.querySelector(".wnpFooter");
+                var fh = (ft && ft.offsetParent !== null) ? ft.offsetHeight : 0;
+                WNP.r.wnpHeroLogo.style.setProperty("--art-logo-bottom-auto", (fh + 24) + "px");
             }
             hideLogoImg(WNP.r.mediaTitleLogo);
         } else if (wantLogo) {
@@ -1361,11 +1358,13 @@ WNP.devLayout = {
     // key: stored id; css: CSS variable to drive (omit for JS-consumed props); def: default shown.
     props: [
         { group: "Artwork – clear logo", key: "artLogoLeft", label: "Left", css: "--art-logo-left", min: 0, max: 40, step: 0.5, unit: "vw", def: 3 },
-        { group: "Artwork – clear logo", key: "artLogoBottom", label: "Bottom", css: "--art-logo-bottom", min: 0, max: 40, step: 0.5, unit: "vh", def: null },
+        { group: "Artwork – clear logo", key: "artLogoBottom", label: "Bottom (progress on)", css: "--art-logo-bottom", min: 0, max: 40, step: 0.5, unit: "vh", def: null },
+        { group: "Artwork – clear logo", key: "artLogoBottomHidden", label: "Bottom (progress off)", css: "--art-logo-bottom-hidden", min: 0, max: 40, step: 0.5, unit: "vh", def: 3 },
         { group: "Artwork – clear logo", key: "artLogoMaxW", label: "Max width", css: "--art-logo-maxw", min: 10, max: 90, step: 1, unit: "vw", def: 47 },
         { group: "Artwork – clear logo", key: "artLogoMaxH", label: "Max height", css: "--art-logo-maxh", min: 10, max: 60, step: 1, unit: "vh", def: 33 },
         { group: "Artwork – source logo", key: "artSrcRight", label: "Right", css: "--art-source-right", min: 0, max: 40, step: 0.5, unit: "vw", def: 3 },
-        { group: "Artwork – source logo", key: "artSrcBottom", label: "Bottom", css: "--art-source-bottom", min: 0, max: 40, step: 0.5, unit: "vh", def: 3 },
+        { group: "Artwork – source logo", key: "artSrcBottom", label: "Bottom (progress on)", css: "--art-source-bottom", min: 0, max: 40, step: 0.5, unit: "vh", def: 3 },
+        { group: "Artwork – source logo", key: "artSrcBottomHidden", label: "Bottom (progress off)", css: "--art-source-bottom-hidden", min: 0, max: 40, step: 0.5, unit: "vh", def: 3 },
         { group: "Artwork – source logo", key: "artSrcMaxH", label: "Max height", css: "--art-source-maxh", min: 2, max: 20, step: 0.5, unit: "vh", def: 5 },
         { group: "Clock – position", key: "clockOffsetX", label: "Offset X", css: "--clock-x", min: -20, max: 20, step: 0.5, unit: "vw", def: 0 },
         { group: "Clock – position", key: "clockOffsetY", label: "Offset Y", css: "--clock-y", min: -20, max: 20, step: 0.5, unit: "vh", def: 0 },
