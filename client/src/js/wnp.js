@@ -11,7 +11,7 @@ WNP.s = {
     locPort: (location.port && location.port != "80" && location.port != "1234") ? location.port : "80",
     rndAlbumArtUri: "./img/fake-album-1.jpg",
     // Device selection
-    aDeviceUI: ["btnPrev", "btnPlay", "btnStop", "btnNext", "btnRefresh", "selDeviceChoices", "devName", "devNameHolder", "mediaTitle", "mediaSubTitle", "mediaArtist", "mediaAlbum", "mediaBitRate", "mediaBitDepth", "mediaSampleRate", "mediaQualityIdent", "devVol", "btnRepeat", "btnShuffle", "progressPlayed", "progressLeft", "progressPercent", "mediaSource", "albumArt", "bgAlbumArtBlur", "btnDevSelect", "oDeviceList", "btnDevPreset", "oPresetList", "btnDevVolume", "rVolume", "mediaLyrics", "lyricPrev", "lyricCurrent", "lyricNext", "lyricAfter", "alerts"],
+    aDeviceUI: ["btnPrev", "btnPlay", "btnStop", "btnNext", "btnRefresh", "selDeviceChoices", "devName", "devNameHolder", "mediaTitle", "mediaTitleLogo", "mediaSubTitle", "mediaArtist", "mediaAlbum", "mediaBitRate", "mediaBitDepth", "mediaSampleRate", "mediaQualityIdent", "devVol", "btnRepeat", "btnShuffle", "progressPlayed", "progressLeft", "progressPercent", "mediaSource", "albumArt", "bgAlbumArtBlur", "btnDevSelect", "oDeviceList", "btnDevPreset", "oPresetList", "btnDevVolume", "rVolume", "mediaLyrics", "lyricPrev", "lyricCurrent", "lyricNext", "lyricAfter", "alerts"],
     // Server actions to be used in the app
     aServerUI: ["btnReboot", "btnUpdate", "btnShutdown", "btnReloadUI", "sServerUrlHostname", "sServerUrlIP", "sServerVersion", "sClientVersion", "chkLyricsEnabled", "lyricsCacheSize", "btnClearLyricsCache", "lyricsOffsetMs",
         "wnpClock", "clockTime", "clockDate", "clockNote", "clockWeather", "clockDial", "dialTicks", "dialNumbers", "dialBrand", "dialSub", "handHour", "handMinute", "handSecond", "clockSeg", "wnpMiniClock",
@@ -21,7 +21,8 @@ WNP.s = {
         "chkWeatherTemp", "chkWeatherForecast", "chkWeatherLabel", "weatherLocation", "selWeatherUnits", "weatherStatus",
         "selClockLocale", "chkSwipeEnabled", "selSwipeGesture", "selSwipeTransition", "swipeReturnSeconds",
         "wnpNightShift", "chkNightShift", "selNightShiftSchedule", "nightShiftFrom", "nightShiftTo", "nightShiftWarmth", "nightShiftWarmthValue", "nightShiftBrightness", "nightShiftBrightnessValue",
-        "chkExternalEnabled", "selExternalPriority", "selExternalArtwork", "plexUrl", "plexToken", "plexPlayers", "plexUsers", "jellyfinUrl", "jellyfinApiKey", "jellyfinPlayers", "jellyfinUsers", "btnSaveSources",
+        "chkPresenceEnabled", "selPresenceMode", "presenceOffDelay", "chkVolumeKnob", "volumeKnobStep",
+        "chkExternalEnabled", "selExternalPriority", "selExternalArtwork", "plexUrl", "plexToken", "plexPlayers", "plexUsers", "jellyfinUrl", "jellyfinApiKey", "jellyfinPlayers", "jellyfinUsers", "chkClearLogo", "btnSaveSources",
         "wnpHero", "wnpHeroImg", "wnpHeroImgB", "wnpHeroLogo"],
     // Default timeout for alerts in ms
     alertTimeoutMs: 5000
@@ -58,6 +59,7 @@ WNP.d = {
     progAnchor: null, // Last known playback position anchor for smooth local progress interpolation
     progressTimer: null, // Local progress ticker interval
     populateSourcesOnce: false, // One-shot: repopulate the Sources form on the next server-settings (set on modal open)
+    presenceBlank: false, // Room empty (presence "app-blank" mode) -> blank the screen (fork)
     heroActiveLayer: "a" // Which hero image layer is currently shown (for crossfading backdrop art)
 };
 
@@ -288,6 +290,35 @@ WNP.setUIListeners = function () {
         });
     });
 
+    // Presence sensor + volume knob (kiosk companion features). (fork)
+    ["chkPresenceEnabled", "selPresenceMode", "presenceOffDelay"].forEach(function (id) {
+        if (!WNP.r[id]) { return; }
+        WNP.r[id].addEventListener("change", function () {
+            socket.emit("features-settings", {
+                features: {
+                    presence: {
+                        enabled: WNP.r.chkPresenceEnabled.checked,
+                        mode: WNP.r.selPresenceMode.value,
+                        offDelaySec: parseInt(WNP.r.presenceOffDelay.value, 10) || 45
+                    }
+                }
+            });
+        });
+    });
+    ["chkVolumeKnob", "volumeKnobStep"].forEach(function (id) {
+        if (!WNP.r[id]) { return; }
+        WNP.r[id].addEventListener("change", function () {
+            socket.emit("features-settings", {
+                features: {
+                    volumeKnob: {
+                        enabled: WNP.r.chkVolumeKnob.checked,
+                        step: parseInt(WNP.r.volumeKnobStep.value, 10) || 3
+                    }
+                }
+            });
+        });
+    });
+
     // External sources (Plex / Jellyfin) settings
     if (this.r.btnSaveSources) {
         this.r.btnSaveSources.addEventListener("click", function () {
@@ -297,6 +328,7 @@ WNP.setUIListeners = function () {
                         enabled: WNP.r.chkExternalEnabled.checked,
                         priority: WNP.r.selExternalPriority.value,
                         artwork: WNP.r.selExternalArtwork.value,
+                        clearLogo: WNP.r.chkClearLogo ? WNP.r.chkClearLogo.checked : true,
                         plex: { url: WNP.r.plexUrl.value.trim(), token: WNP.r.plexToken.value.trim(), players: WNP.r.plexPlayers.value, users: WNP.r.plexUsers.value },
                         jellyfin: { url: WNP.r.jellyfinUrl.value.trim(), apiKey: WNP.r.jellyfinApiKey.value.trim(), players: WNP.r.jellyfinPlayers.value, users: WNP.r.jellyfinUsers.value }
                     }
@@ -479,6 +511,17 @@ WNP.setSocketDefinitions = function () {
             WNP.r.nightShiftBrightnessValue.innerText = WNP.r.nightShiftBrightness.value;
         }
         WNP.applyNightShift();
+        var pres = (msg && msg.features && msg.features.presence) ? msg.features.presence : {};
+        if (WNP.r.chkPresenceEnabled) {
+            WNP.r.chkPresenceEnabled.checked = Boolean(pres.enabled);
+            WNP.r.selPresenceMode.value = pres.mode || "power-off";
+            WNP.r.presenceOffDelay.value = (typeof pres.offDelaySec === "number") ? pres.offDelaySec : 45;
+        }
+        var vk = (msg && msg.features && msg.features.volumeKnob) ? msg.features.volumeKnob : {};
+        if (WNP.r.chkVolumeKnob) {
+            WNP.r.chkVolumeKnob.checked = Boolean(vk.enabled);
+            WNP.r.volumeKnobStep.value = (typeof vk.step === "number") ? vk.step : 3;
+        }
         var wx = (msg && msg.features && msg.features.weather) ? msg.features.weather : {};
         if (WNP.r.chkWeatherTemp) {
             WNP.r.chkWeatherTemp.checked = Boolean(wx.enabled);
@@ -503,6 +546,7 @@ WNP.setSocketDefinitions = function () {
             WNP.r.chkExternalEnabled.checked = ext.enabled !== false;
             WNP.r.selExternalPriority.value = ext.priority || "wiim";
             if (WNP.r.selExternalArtwork) { WNP.r.selExternalArtwork.value = ext.artwork || "backdrop"; }
+            if (WNP.r.chkClearLogo) { WNP.r.chkClearLogo.checked = ext.clearLogo !== false; } // default on
             WNP.r.plexUrl.value = (ext.plex && ext.plex.url) || "";
             WNP.r.plexToken.value = (ext.plex && ext.plex.token) || "";
             WNP.r.plexPlayers.value = (ext.plex && ext.plex.players) ? [].concat(ext.plex.players).join(", ") : "";
@@ -799,7 +843,7 @@ WNP.setSocketDefinitions = function () {
 
         // Set Album Art, only if the track changed and the URI changed
         var trackChanged = false;
-        var currentTrackInfo = WNP.r.mediaTitle.innerText + "|" + WNP.r.mediaSubTitle.innerText + "|" + WNP.r.mediaArtist.innerText + "|" + WNP.r.mediaAlbum.innerText;
+        var currentTrackInfo = WNP.r.mediaTitle.textContent + "|" + WNP.r.mediaSubTitle.innerText + "|" + WNP.r.mediaArtist.innerText + "|" + WNP.r.mediaAlbum.innerText; // textContent: title may be hidden (clear-logo mode) where innerText returns ""
         var currentAlbumArt = WNP.r.albumArt.src;
         if (WNP.d.prevTrackInfo !== currentTrackInfo) {
             trackChanged = true;
@@ -814,8 +858,8 @@ WNP.setSocketDefinitions = function () {
             WNP.setAlbumArt(albumArtUri);
         }
 
-        // Backdrop-hero artwork: full-screen fanart behind the now-playing view with an
-        // optional clear logo (Plex/Jellyfin video, Settings > Sources > Artwork). (fork)
+        // Backdrop-hero artwork: full-screen fanart behind the now-playing view
+        // (Plex/Jellyfin video, Settings > Sources > Artwork). (fork)
         var artMode = (msg.trackMetaData && msg.trackMetaData["wnp:artwork"]) || "";
         var heroLogo = (msg.trackMetaData && msg.trackMetaData["wnp:logo"]) || "";
         // Per-artwork layout hooks (external only): poster/backdrop get a large left-aligned
@@ -827,14 +871,36 @@ WNP.setSocketDefinitions = function () {
         // "clock" shows the clock over the backdrop (like backdrop, but the clock replaces the info).
         var heroOn = (artMode === "backdrop" || artMode === "clock") && Boolean(albumArtUri) && WNP.r.wnpHero;
         document.body.classList.toggle("wnp-hero", Boolean(heroOn));
-        // Only (re)set the backdrop/logo on a track change or when empty — the https
-        // art URL carries a changing cache-buster, so setting it every tick would flicker.
+        // Only (re)set the backdrop on a track change or when empty — the https art URL
+        // carries a changing cache-buster, so setting it every tick would flicker.
         var heroHasImg = WNP.r.wnpHeroImg.getAttribute("src") || (WNP.r.wnpHeroImgB && WNP.r.wnpHeroImgB.getAttribute("src"));
         if (heroOn && (trackChanged || !heroHasImg)) {
             WNP.setHeroImage(albumArtUri); // crossfade to the new backdrop
-            if (heroLogo) { WNP.r.wnpHeroLogo.src = heroLogo; WNP.r.wnpHeroLogo.classList.remove("d-none"); }
-            else { WNP.r.wnpHeroLogo.removeAttribute("src"); WNP.r.wnpHeroLogo.classList.add("d-none"); }
-            if (trackChanged) { WNP.playEnter(WNP.r.wnpHeroLogo); }
+        }
+
+        // Clear logo instead of the plain-text title (Settings > Sources > "Show the clear
+        // logo…", default on) when one is available for the album/show/movie. Falls back to
+        // the title text if the logo image fails to load. (fork)
+        var extCfg = (WNP.d.serverSettings && WNP.d.serverSettings.features && WNP.d.serverSettings.features.external) || {};
+        var showTitleLogo = (extCfg.clearLogo !== false) && Boolean(heroLogo);
+        if (WNP.r.mediaTitleLogo) {
+            if (showTitleLogo) {
+                if (WNP.r.mediaTitleLogo.getAttribute("src") !== heroLogo) {
+                    WNP.r.mediaTitleLogo.onerror = function () { // no logo at that URL -> revert to the title text
+                        this.classList.add("d-none");
+                        this.removeAttribute("src");
+                        WNP.r.mediaTitle.classList.remove("d-none");
+                    };
+                    WNP.r.mediaTitleLogo.src = heroLogo;
+                    if (trackChanged) { WNP.playEnter(WNP.r.mediaTitleLogo); }
+                }
+                WNP.r.mediaTitleLogo.classList.remove("d-none");
+                WNP.r.mediaTitle.classList.add("d-none");
+            } else {
+                WNP.r.mediaTitleLogo.classList.add("d-none");
+                WNP.r.mediaTitleLogo.removeAttribute("src");
+                WNP.r.mediaTitle.classList.remove("d-none");
+            }
         }
 
         // Device volume
@@ -925,6 +991,13 @@ WNP.setSocketDefinitions = function () {
         }
     });
 
+    // On presence (app-blank mode): blank the screen when the room is empty. The
+    // clock tick() also ORs this flag in, so it survives the 1s refresh. (fork)
+    socket.on("presence", function (msg) {
+        WNP.d.presenceBlank = !(msg && msg.occupied);
+        document.body.classList.toggle("wnp-blank", WNP.d.presenceBlank);
+    });
+
     // On device set
     socket.on("device-set", function (msg) {
         // Device switch? Fetch settings and device info again.
@@ -960,7 +1033,7 @@ WNP.setSocketDefinitions = function () {
                 else {
                     // Presets found
                     WNP.r.oPresetList.innerHTML = ""; // Clear existing list
-                    var sCurrentTitle = WNP.r.mediaTitle.innerText;
+                    var sCurrentTitle = WNP.r.mediaTitle.textContent; // textContent: title may be hidden in clear-logo mode
                     var sCurrentSubtitle = WNP.r.mediaSubTitle.innerText;
                     param.preset_list.forEach((preset) => {
                         var ddItem = document.createElement("li");
@@ -1988,7 +2061,7 @@ WNP.startClock = function () {
         // Plex/Jellyfin video plays (CSS makes the clock background transparent). (fork)
         var clockOverHero = document.body.classList.contains("wnp-art-clock");
         var showClock = idleClock || self.d.manualClock || clockOverHero;
-        var blank = blankMs > 0 && (now - self.d.lastActivityMs) >= blankMs;
+        var blank = (blankMs > 0 && (now - self.d.lastActivityMs) >= blankMs) || self.d.presenceBlank;
         var trans = (cfg.swipe && cfg.swipe.transition) || "fade";
         if (self.r.wnpClock.getAttribute("data-transition") !== trans) { self.r.wnpClock.setAttribute("data-transition", trans); }
 

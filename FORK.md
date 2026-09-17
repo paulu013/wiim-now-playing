@@ -11,6 +11,7 @@ Upstream: https://github.com/cvdlinden/wiim-now-playing (GPL-3.0). Everything up
 - Optional player/device filter (comma-separated names) so sessions in other rooms are ignored.
 - Config is saved in `server/settings.json`; env vars override: `PLEX_URL`, `PLEX_TOKEN`, `PLEX_PLAYERS`, `JELLYFIN_URL`, `JELLYFIN_API_KEY`, `JELLYFIN_PLAYERS`, `EXTERNAL_PRIORITY`.
 - Plex played natively on the WiiM already shows via the WiiM's own metadata; this adds sessions on other players.
+- **Clear logo instead of the title** (`features.external.clearLogo`, default **on**): when a clear logo is available for the album / show / movie it replaces the plain-text title in the now-playing view (standard, poster and backdrop layouts). Sources are Plex `clearLogo` (from the item's `Image[]` array) and Jellyfin `Logo` (series logo for episodes, item logo for movies, album logo for music). Emitted as `wnp:logo`; the client shows it as `#mediaTitleLogo` and falls back to the title text if the logo image fails to load. Toggle in Settings › Sources ("Show the clear logo instead of the title").
 
 **Clock (Settings › Display)** — `WNP.startClock()` in `client/src/js/wnp.js`
 - Full-screen black clock after N seconds of nothing playing (default 10). Works on `/` and `/tv`.

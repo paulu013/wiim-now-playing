@@ -83,6 +83,55 @@ const callApi = (io, msg, serverSettings) => {
     });
 }
 
+/**
+ * Fetch and parse the device player status (volume, mute, transport, ...).
+ * @param {object} serverSettings - The server settings object.
+ * @param {function} callback - callback(err, statusObject)
+ * @returns {undefined}
+ */
+const getStatus = (serverSettings, callback) => {
+    callHttpApi("getPlayerStatus", serverSettings, (err, data) => {
+        if (err) { return callback(err); }
+        try { callback(null, JSON.parse(data)); }
+        catch (e) { callback(e); }
+    });
+};
+
+/**
+ * Adjust the device volume by a relative delta (read-modify-write, since the
+ * LinkPlay API only sets absolute volume). Used by the wireless volume knob.
+ * @param {object} io - The Socket.IO object.
+ * @param {number} delta - Signed volume step (percent).
+ * @param {object} serverSettings - The server settings object.
+ * @returns {undefined}
+ */
+const adjustVolume = (io, delta, serverSettings) => {
+    getStatus(serverSettings, (err, st) => {
+        if (err || !st) { log("adjustVolume: no status", err && err.code); return; }
+        let vol = parseInt(st.vol, 10);
+        if (isNaN(vol)) { vol = 0; }
+        const next = Math.max(0, Math.min(100, vol + delta));
+        callApi(io, "setPlayerCmd:vol:" + next, serverSettings);
+    });
+};
+
+/**
+ * Toggle mute based on the current device state.
+ * @param {object} io - The Socket.IO object.
+ * @param {object} serverSettings - The server settings object.
+ * @returns {undefined}
+ */
+const toggleMute = (io, serverSettings) => {
+    getStatus(serverSettings, (err, st) => {
+        if (err || !st) { log("toggleMute: no status", err && err.code); return; }
+        const muted = String(st.mute) === "1";
+        callApi(io, "setPlayerCmd:mute:" + (muted ? "0" : "1"), serverSettings);
+    });
+};
+
 module.exports = {
-    callApi
+    callApi,
+    getStatus,
+    adjustVolume,
+    toggleMute
 };

@@ -1,0 +1,20 @@
+[Unit]
+Description=WiiM Now Playing kiosk (cage + Chromium)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# User is rewritten by install.sh via a drop-in when KIOSK_USER != pi.
+User=pi
+# WNP_URL (and everything else) comes from the gitignored config, so no infra
+# values live in this committed unit. See deploy/pi/wnp-kiosk.conf.example.
+EnvironmentFile=/etc/wnp-kiosk.conf
+ExecStart=/usr/bin/cage -- /usr/bin/chromium \
+  --kiosk --noerrdialogs --disable-infobars --incognito \
+  --check-for-update-interval=31536000 --ozone-platform=wayland \
+  --app=${WNP_URL}
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

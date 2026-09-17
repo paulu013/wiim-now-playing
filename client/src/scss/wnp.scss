@@ -1255,6 +1255,17 @@ body.wnp-external {
     }
 }
 
+/* Clear logo shown in place of the plain-text title when one is available
+ * (Settings > Sources > "Show the clear logo…"). inline-block so it follows the
+ * container's text-align (centred in the normal view, left in poster/backdrop). */
+#mediaTitleLogo {
+    display: inline-block;
+    max-height: 3.25rem;
+    max-width: min(100%, 460px);
+    object-fit: contain;
+    margin-bottom: .35rem;
+}
+
 body.wnp-hero {
     #wnpApp {
         background: #000; // let the backdrop show instead of the app gradient
@@ -1308,6 +1319,13 @@ body.wnp-art-poster {
         font-size: calc(2rem + 3vw);
         font-weight: 700;
         line-height: 1.03;
+    }
+
+    // Clear logo takes the place of the big title in poster/backdrop layouts.
+    #mediaTitleLogo {
+        max-height: 24vh;
+        max-width: 55vw;
+        margin-bottom: 1vh;
     }
 
     #mediaArtist {

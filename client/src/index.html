@@ -73,6 +73,7 @@
 
             <div class="wnpMediaInfo">
                 <div id="mediaSource">{SOURCE}</div>
+                <img id="mediaTitleLogo" class="d-none" alt="">
                 <h2 id="mediaTitle">{SONG}</h2>
                 <h3 id="mediaArtist">{ARTIST}</h3>
                 <div class="mb-2"><span id="mediaAlbum">{ALBUM TITLE}</span></div>
@@ -373,6 +374,51 @@
                                         on top of this.</div>
                                 </div>
 
+                                <div class="mb-3 pb-3 border-bottom">
+                                    <label class="form-label">Presence sensor (kiosk display)</label>
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="chkPresenceEnabled">
+                                        <label class="form-check-label" for="chkPresenceEnabled">Turn the display off
+                                            when the room is empty (needs an LD2410 sensor on the Pi)</label>
+                                    </div>
+                                    <div class="row g-2 mt-1 align-items-end">
+                                        <div class="col-6">
+                                            <label class="form-label small" for="selPresenceMode">When empty</label>
+                                            <select class="form-select" id="selPresenceMode">
+                                                <option value="power-off">Power the panel off</option>
+                                                <option value="app-blank">Blank the screen (black)</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-6">
+                                            <label class="form-label small" for="presenceOffDelay">Off after
+                                                (seconds)</label>
+                                            <input class="form-control" type="number" id="presenceOffDelay" min="5"
+                                                max="600" step="5">
+                                        </div>
+                                    </div>
+                                    <div class="form-text small text-muted">Safe when no sensor is attached — the Pi
+                                        daemon simply idles. Sensor sensitivity/zone is tuned on the Pi.</div>
+                                </div>
+
+                                <div class="mb-3 pb-3 border-bottom">
+                                    <label class="form-label">Wireless volume knob</label>
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" id="chkVolumeKnob">
+                                        <label class="form-check-label" for="chkVolumeKnob">Let a HID volume knob on the
+                                            Pi control WiiM volume &amp; transport</label>
+                                    </div>
+                                    <div class="row g-2 mt-1 align-items-end">
+                                        <div class="col-6">
+                                            <label class="form-label small" for="volumeKnobStep">Volume step
+                                                (%)</label>
+                                            <input class="form-control" type="number" id="volumeKnobStep" min="1"
+                                                max="20" step="1">
+                                        </div>
+                                    </div>
+                                    <div class="form-text small text-muted">Rotate = volume ±, click = play/pause,
+                                        double/next &amp; previous. Safe when no knob is attached.</div>
+                                </div>
+
                                 <div class="mb-3">
                                     <label class="form-label">Clock</label>
                                     <div class="form-check form-switch">
@@ -643,6 +689,11 @@
                                             <option value="poster">Poster (movie / show)</option>
                                             <option value="still">Still (episode grab)</option>
                                         </select>
+                                    </div>
+                                    <div class="form-check form-switch mt-2">
+                                        <input class="form-check-input" type="checkbox" id="chkClearLogo">
+                                        <label class="form-check-label" for="chkClearLogo">Show the clear logo instead of
+                                            the title when one is available (album / show / movie)</label>
                                     </div>
                                     <div class="form-text small text-muted">Plex played on the WiiM itself already
                                         shows through the WiiM; use these for sessions on other players. Saved on the
