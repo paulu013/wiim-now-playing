@@ -1375,8 +1375,19 @@ body.wnp-art-poster {
         margin-bottom: 1vh;
     }
 
+    // Director + year (external video). Scale/offset tunable via the Layout (dev) tab.
+    // Offset is a transform (these lines don't carry .wnp-enter, only their parent does).
+    #mediaArtist,
+    div:has(> #mediaAlbum) {
+        transform: translate(var(--art-meta-x, 0vw), var(--art-meta-y, 0vh));
+    }
+
     #mediaArtist {
-        font-size: calc(1.2rem + 1vw);
+        font-size: calc((1.2rem + 1vw) * var(--art-meta-scale, 1));
+    }
+
+    div:has(> #mediaAlbum) {
+        font-size: calc((.875rem + .3vw) * var(--art-meta-scale, 1));
     }
 
     #mediaSubTitle {
@@ -1392,8 +1403,13 @@ body.wnp-art-poster {
         text-align: right;
         z-index: 1042; // above the hero backdrop
 
+        // Drive a real height (not max-height) so the slider scales small source
+        // logos UP as well as down; max-width guards wide wordmarks. (fork)
         img {
-            max-height: var(--art-source-maxh, 5vh);
+            height: var(--art-source-maxh, 5vh);
+            max-height: none;
+            width: auto;
+            max-width: 40vw;
             margin-bottom: 0;
         }
     }
