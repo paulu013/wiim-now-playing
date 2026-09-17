@@ -1261,9 +1261,17 @@ body.wnp-external {
 }
 
 /* Artwork toggles (Settings > Sources). */
-body.wnp-hide-progress {
-    .wnpFooter { display: none; } // hide the progress bar + playback controls in the artwork view
-    #wnpHero #wnpHeroLogo { bottom: 3vh; } // no footer to clear -> drop the logo lower (needs the #wnpHero prefix to beat the base rule's specificity)
+body.wnp-hide-progress .wnpFooter {
+    // Hide the progress bar + playback/device controls, but KEEP the settings / TV-exit
+    // buttons (.btn-group.secondary). Logo vertical offset is handled in JS. (fork)
+    #progressPlayed,
+    #progressLeft,
+    #progressPercent,
+    .btn-group.primary,
+    #devNameHolder,
+    #devVolumeHolder {
+        display: none;
+    }
 }
 body.wnp-hide-source #mediaSource { display: none; } // hide the Plex/Jellyfin source logo
 

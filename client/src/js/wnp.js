@@ -935,10 +935,21 @@ WNP.setSocketDefinitions = function () {
             }
         };
         var hideLogoImg = function (imgEl) {
-            if (imgEl) { imgEl.classList.add("d-none"); imgEl.removeAttribute("src"); imgEl.onload = null; imgEl.onerror = null; }
+            if (imgEl) { imgEl.classList.add("d-none"); imgEl.removeAttribute("src"); imgEl.onload = null; imgEl.onerror = null; imgEl.style.bottom = ""; }
         };
         if (heroLogoMode) {
-            if (WNP.r.wnpHeroLogo) { setLogoImg(WNP.r.wnpHeroLogo); }
+            if (WNP.r.wnpHeroLogo) {
+                setLogoImg(WNP.r.wnpHeroLogo);
+                // Sit just above the footer; measure it so the logo clears both the short /tv
+                // footer and the taller normal-view footer. Footer hidden -> drop lower. (fork)
+                if (extCfg.showProgress === false) {
+                    WNP.r.wnpHeroLogo.style.bottom = "3vh";
+                } else {
+                    var ft = document.querySelector(".wnpFooter");
+                    var fh = (ft && ft.offsetParent !== null) ? ft.offsetHeight : 0;
+                    WNP.r.wnpHeroLogo.style.bottom = (fh + 24) + "px";
+                }
+            }
             hideLogoImg(WNP.r.mediaTitleLogo);
         } else if (wantLogo) {
             if (WNP.r.mediaTitleLogo) { setLogoImg(WNP.r.mediaTitleLogo); }
