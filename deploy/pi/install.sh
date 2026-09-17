@@ -117,6 +117,7 @@ install_companion() {  # install_companion <script> <unit> [extra_runtime_env]
         [ "$KIOSK_USER" != "pi" ] && echo "User=$KIOSK_USER"
         [ -n "$runtime_env" ] && echo "Environment=$runtime_env"
     } > "/etc/systemd/system/$unit.d/override.conf"
+    return 0  # don't let the last conditional above set a non-zero return under set -e
 }
 
 if [ "$PRESENCE_ENABLED" = "1" ]; then
