@@ -1248,12 +1248,15 @@ body.wnp-external {
     // viewport and is never transformed, so absolute positioning here anchors to the
     // screen. Capped so the right edge stays within the left half (3vw + 47vw = 50vw)
     // and the height under 1/3 of the screen (aspect ratio preserved by the <img>).
+    // Positions/sizes are CSS variables so the Layout (dev) tab can tune them live.
+    // --art-logo-bottom-auto is set by JS to clear the footer; a dev override
+    // (--art-logo-bottom) takes precedence.
     #wnpHeroLogo {
         position: absolute;
-        left: 3vw;
-        bottom: 70px; // sit just above the ~46px progress-bar footer (dropped to 3vh when it's hidden)
-        max-width: 47vw;
-        max-height: 33vh;
+        left: var(--art-logo-left, 3vw);
+        bottom: var(--art-logo-bottom, var(--art-logo-bottom-auto, 70px));
+        max-width: var(--art-logo-maxw, 47vw);
+        max-height: var(--art-logo-maxh, 33vh);
         object-fit: contain;
         object-position: left bottom;
         z-index: 1042; // above the scrim / backdrop, like #mediaSource
@@ -1367,17 +1370,17 @@ body.wnp-art-poster {
         display: none; // don't show the player/device
     }
 
-    // Source logo (Plex/Jellyfin) in the bottom-right corner.
+    // Source logo (Plex/Jellyfin) in the bottom-right corner (tunable via the dev tab).
     #mediaSource {
         position: fixed;
-        right: 3vw;
-        bottom: 3vh;
+        right: var(--art-source-right, 3vw);
+        bottom: var(--art-source-bottom, 3vh);
         margin: 0;
         text-align: right;
         z-index: 1042; // above the hero backdrop
 
         img {
-            max-height: 5vh;
+            max-height: var(--art-source-maxh, 5vh);
             margin-bottom: 0;
         }
     }

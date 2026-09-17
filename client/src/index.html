@@ -228,6 +228,12 @@
                                     <i class="bi bi-info-circle me-2"></i>About
                                 </button>
                             </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="devlayout-tab" data-bs-toggle="tab"
+                                    data-bs-target="#devlayout-pane" type="button" role="tab">
+                                    <i class="bi bi-sliders me-2"></i>Layout (dev)
+                                </button>
+                            </li>
                         </ul>
 
                         <!-- Tab Content -->
@@ -771,6 +777,22 @@
                                     </ul>
                                 </div>
 
+                            </div>
+
+                            <!-- Layout (dev) Tab: live position/size tuning -->
+                            <div class="tab-pane fade" id="devlayout-pane" role="tabpanel"
+                                aria-labelledby="devlayout-tab" tabindex="0">
+                                <p class="small text-muted">Drag to reposition/resize the artwork &amp; alarm-clock
+                                    elements live (this browser only, saved locally). Copy the values below and share
+                                    them to bake in as defaults.</p>
+                                <div id="devLayoutControls"></div>
+                                <div class="mb-2">
+                                    <label class="form-label small" for="devLayoutValues">Current overrides</label>
+                                    <textarea id="devLayoutValues" class="form-control form-control-sm"
+                                        rows="5" readonly></textarea>
+                                </div>
+                                <button type="button" class="btn btn-outline-secondary btn-sm"
+                                    id="btnDevLayoutReset">Reset to defaults</button>
                             </div>
 
                         </div>
