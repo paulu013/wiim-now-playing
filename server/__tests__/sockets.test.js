@@ -102,10 +102,11 @@ describe('sockets.js', () => {
     });
 
     describe('getServerSettings', () => {
-        it('should emit server-settings', () => {
+        it('should emit server-settings with the settings and computed env locks', () => {
             const serverSettings = { foo: 'bar' };
             sockets.getServerSettings(io, serverSettings);
-            expect(io.emit).toHaveBeenCalledWith('server-settings', serverSettings);
+            expect(io.emit).toHaveBeenCalledWith('server-settings',
+                expect.objectContaining({ foo: 'bar', envLocks: expect.any(Object) }));
         });
     });
 });

@@ -88,7 +88,18 @@ const scanDevices = (io, ssdp, deviceList, serverSettings) => {
  */
 const getServerSettings = (io, serverSettings) => {
     log("Get server settings...");
-    io.emit("server-settings", serverSettings);
+    // Which Sources fields are supplied by env vars (they override the UI). The client shows
+    // these read-only. Non-secret env values are surfaced for display; secrets are not. (fork)
+    const e = process.env;
+    const lk = (envVal, secret) => envVal ? { locked: true, value: secret ? "" : envVal, secret: !!secret } : { locked: false };
+    const envLocks = {
+        external: {
+            priority: lk(e.EXTERNAL_PRIORITY),
+            plex: { url: lk(e.PLEX_URL), token: lk(e.PLEX_TOKEN, true), players: lk(e.PLEX_PLAYERS), users: lk(e.PLEX_USERS) },
+            jellyfin: { url: lk(e.JELLYFIN_URL), apiKey: lk(e.JELLYFIN_API_KEY, true), players: lk(e.JELLYFIN_PLAYERS), users: lk(e.JELLYFIN_USERS) }
+        }
+    };
+    io.emit("server-settings", { ...serverSettings, envLocks });
 }
 
 module.exports = {

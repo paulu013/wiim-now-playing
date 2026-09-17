@@ -180,9 +180,27 @@ setTimeout(() => {
 }, serverSettings.timeouts.rescan);
 
 // ===========================================================================
+// Parse the TRUST_PROXY env into an Express "trust proxy" value: a hop count (e.g. "1"),
+// "true"/"false", or a CSV/preset string ("loopback, linklocal, uniquelocal"). Unset =>
+// trust private-range proxies, correct for a homelab reverse proxy. (fork)
+function parseTrustProxy(v) {
+    if (v === undefined || v === "") { return "loopback, linklocal, uniquelocal"; }
+    if (v === "true") { return true; }
+    if (v === "false") { return false; }
+    const n = Number(v);
+    return Number.isInteger(n) ? n : v;
+}
+
 // Set Express functionality
 // Use CORS
 app.use(cors());
+
+// Behind a reverse proxy (Traefik + Cloudflare in the fork's deployment) requests carry
+// X-Forwarded-For. Tell Express which proxies to trust so express-rate-limit keys on the
+// real client IP and stops logging ERR_ERL_UNEXPECTED_X_FORWARDED_FOR. Configurable via
+// TRUST_PROXY (a hop count like "1", "true"/"false", or a CSV/preset); defaults to trusting
+// private-range proxies, which is correct for a homelab reverse proxy. (fork)
+app.set("trust proxy", parseTrustProxy(process.env.TRUST_PROXY));
 
 // Set up rate limiter: maximum 1000 requests per 15 minutes per IP
 // As static file serving can be quite intensive we set a limit here

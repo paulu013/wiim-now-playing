@@ -22,7 +22,7 @@ WNP.s = {
         "selClockLocale", "chkSwipeEnabled", "selSwipeGesture", "selSwipeTransition", "swipeReturnSeconds",
         "wnpNightShift", "chkNightShift", "selNightShiftSchedule", "nightShiftFrom", "nightShiftTo", "nightShiftWarmth", "nightShiftWarmthValue", "nightShiftBrightness", "nightShiftBrightnessValue",
         "chkPresenceEnabled", "selPresenceMode", "presenceOffDelay", "chkVolumeKnob", "volumeKnobStep",
-        "chkExternalEnabled", "selExternalPriority", "selExternalArtwork", "plexUrl", "plexToken", "plexPlayers", "plexUsers", "jellyfinUrl", "jellyfinApiKey", "jellyfinPlayers", "jellyfinUsers", "chkClearLogo", "chkShowDetails", "btnSaveSources",
+        "chkExternalEnabled", "selExternalPriority", "selExternalArtwork", "plexUrl", "plexToken", "plexPlayers", "plexUsers", "jellyfinUrl", "jellyfinApiKey", "jellyfinPlayers", "jellyfinUsers", "chkClearLogo", "chkShowDetails", "chkShowProgress", "chkShowSourceLogo", "btnSaveSources",
         "wnpHero", "wnpHeroImg", "wnpHeroImgB", "wnpHeroLogo"],
     // Default timeout for alerts in ms
     alertTimeoutMs: 5000
@@ -330,6 +330,8 @@ WNP.setUIListeners = function () {
                         artwork: WNP.r.selExternalArtwork.value,
                         clearLogo: WNP.r.chkClearLogo ? WNP.r.chkClearLogo.checked : true,
                         showDetails: WNP.r.chkShowDetails ? WNP.r.chkShowDetails.checked : false,
+                        showProgress: WNP.r.chkShowProgress ? WNP.r.chkShowProgress.checked : true,
+                        showSourceLogo: WNP.r.chkShowSourceLogo ? WNP.r.chkShowSourceLogo.checked : true,
                         plex: { url: WNP.r.plexUrl.value.trim(), token: WNP.r.plexToken.value.trim(), players: WNP.r.plexPlayers.value, users: WNP.r.plexUsers.value },
                         jellyfin: { url: WNP.r.jellyfinUrl.value.trim(), apiKey: WNP.r.jellyfinApiKey.value.trim(), players: WNP.r.jellyfinPlayers.value, users: WNP.r.jellyfinUsers.value }
                     }
@@ -549,6 +551,8 @@ WNP.setSocketDefinitions = function () {
             if (WNP.r.selExternalArtwork) { WNP.r.selExternalArtwork.value = ext.artwork || "backdrop"; }
             if (WNP.r.chkClearLogo) { WNP.r.chkClearLogo.checked = ext.clearLogo !== false; } // default on
             if (WNP.r.chkShowDetails) { WNP.r.chkShowDetails.checked = ext.showDetails === true; } // default off
+            if (WNP.r.chkShowProgress) { WNP.r.chkShowProgress.checked = ext.showProgress !== false; } // default on
+            if (WNP.r.chkShowSourceLogo) { WNP.r.chkShowSourceLogo.checked = ext.showSourceLogo !== false; } // default on
             WNP.r.plexUrl.value = (ext.plex && ext.plex.url) || "";
             WNP.r.plexToken.value = (ext.plex && ext.plex.token) || "";
             WNP.r.plexPlayers.value = (ext.plex && ext.plex.players) ? [].concat(ext.plex.players).join(", ") : "";
@@ -557,6 +561,33 @@ WNP.setSocketDefinitions = function () {
             WNP.r.jellyfinApiKey.value = (ext.jellyfin && ext.jellyfin.apiKey) || "";
             WNP.r.jellyfinPlayers.value = (ext.jellyfin && ext.jellyfin.players) ? [].concat(ext.jellyfin.players).join(", ") : "";
             if (WNP.r.jellyfinUsers) { WNP.r.jellyfinUsers.value = (ext.jellyfin && ext.jellyfin.users) ? [].concat(ext.jellyfin.users).join(", ") : ""; }
+
+            // Env-managed fields are read-only (env vars override the UI). Show them locked;
+            // secrets are masked (never sent to the client). (fork)
+            var envLk = (msg && msg.envLocks && msg.envLocks.external) || {};
+            var applyLock = function (el, lock) {
+                if (!el) { return; }
+                if (lock && lock.locked) {
+                    el.disabled = true;
+                    el.classList.add("wnp-env-locked");
+                    el.title = "Set via environment variable — edit .env and redeploy to change";
+                    if (lock.secret) { el.value = ""; el.placeholder = "🔒 set via environment"; }
+                    else if (lock.value != null && lock.value !== "") { el.value = [].concat(lock.value).join(", "); }
+                } else {
+                    el.disabled = false;
+                    el.classList.remove("wnp-env-locked");
+                    el.removeAttribute("title");
+                }
+            };
+            applyLock(WNP.r.selExternalPriority, envLk.priority);
+            applyLock(WNP.r.plexUrl, envLk.plex && envLk.plex.url);
+            applyLock(WNP.r.plexToken, envLk.plex && envLk.plex.token);
+            applyLock(WNP.r.plexPlayers, envLk.plex && envLk.plex.players);
+            applyLock(WNP.r.plexUsers, envLk.plex && envLk.plex.users);
+            applyLock(WNP.r.jellyfinUrl, envLk.jellyfin && envLk.jellyfin.url);
+            applyLock(WNP.r.jellyfinApiKey, envLk.jellyfin && envLk.jellyfin.apiKey);
+            applyLock(WNP.r.jellyfinPlayers, envLk.jellyfin && envLk.jellyfin.players);
+            applyLock(WNP.r.jellyfinUsers, envLk.jellyfin && envLk.jellyfin.users);
         }
 
         // Lyrics enabled/disabled
@@ -923,6 +954,12 @@ WNP.setSocketDefinitions = function () {
         var wnpKind = (msg.trackMetaData && msg.trackMetaData["wnp:kind"]) || "";
         var isVideo = wnpKind === "movie" || wnpKind === "episode" || wnpKind === "clip";
         document.body.classList.toggle("wnp-hide-details", isVideo && extCfg.showDetails !== true);
+
+        // In the external artwork view, optionally hide the progress bar/playback footer and
+        // the Plex/Jellyfin source logo (Settings > Sources). Only while artwork is active. (fork)
+        var artOn = Boolean(extArtMode);
+        document.body.classList.toggle("wnp-hide-progress", artOn && extCfg.showProgress === false);
+        document.body.classList.toggle("wnp-hide-source", artOn && extCfg.showSourceLogo === false);
 
         // Device volume
         WNP.r.devVol.innerText = (msg.CurrentVolume) ? msg.CurrentVolume : "-"; // Set the volume on the UI

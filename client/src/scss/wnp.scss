@@ -1250,7 +1250,7 @@ body.wnp-external {
     #wnpHeroLogo {
         position: absolute;
         left: 3vw;
-        bottom: 3vh;
+        bottom: 70px; // sit just above the ~46px progress-bar footer (dropped to 3vh when it's hidden)
         max-width: 47vw;
         max-height: 33vh;
         object-fit: contain;
@@ -1258,6 +1258,19 @@ body.wnp-external {
         z-index: 1042; // above the scrim / backdrop, like #mediaSource
         filter: drop-shadow(0 4px 16px rgba(0, 0, 0, .7));
     }
+}
+
+/* Artwork toggles (Settings > Sources). */
+body.wnp-hide-progress {
+    .wnpFooter { display: none; } // hide the progress bar + playback controls in the artwork view
+    #wnpHero #wnpHeroLogo { bottom: 3vh; } // no footer to clear -> drop the logo lower (needs the #wnpHero prefix to beat the base rule's specificity)
+}
+body.wnp-hide-source #mediaSource { display: none; } // hide the Plex/Jellyfin source logo
+
+/* Settings fields supplied by an environment variable are shown read-only. */
+.wnp-env-locked {
+    opacity: .6;
+    cursor: not-allowed;
 }
 
 /* Clear logo shown in place of the plain-text title when one is available
