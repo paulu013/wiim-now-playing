@@ -105,6 +105,18 @@ let serverSettings = { // Placeholder for current server settings
                 "brightness": 80 // 20-100 %
             }
         },
+        "presence": { // mmWave presence sensor on the Pi kiosk (turns the panel off when the room is empty)
+            "enabled": false, // Master enable; the Pi presence daemon honours this
+            "mode": "power-off", // "power-off" (wlr-randr/vcgencmd) or "app-blank" (paint the browser black)
+            "offDelaySec": 45, // Grace period of no presence before powering off
+            "zoneMinCm": 50, // Seating-zone distance band + energy floor for best-effort dog rejection
+            "zoneMaxCm": 450,
+            "energyMin": 40
+        },
+        "volumeKnob": { // Wireless HID volume knob on the Pi -> WiiM volume/transport
+            "enabled": false,
+            "step": 3 // Volume percent per detent
+        },
         "external": external.DEFAULTS // Plex / Jellyfin sources, see lib/external.js
     },
     "server": null, // Placeholder for the express server (port) information
@@ -119,6 +131,7 @@ let pollState = null; // For the renderer state
 let pollMetadata = null; // For the renderer metadata
 let pollExternal = null; // For Plex / Jellyfin sessions
 let pollWeather = null; // For the weather
+let lastPresence = null; // Last presence state (app-blank mode), sent to freshly connected clients (fork)
 
 // Device polling emits through this proxy: while an external (Plex/Jellyfin) session
 // is being shown, device state/metadata emits are held back. See lib/external.js.
@@ -333,6 +346,7 @@ io.on("connection", (socket) => {
     if (cur.state) { socket.emit("state", cur.state); }
     if (cur.metadata) { socket.emit("metadata", cur.metadata); }
     if (weather.getCurrent()) { socket.emit("weather", weather.getCurrent()); }
+    if (lastPresence !== null) { socket.emit("presence", { occupied: lastPresence }); }
     if (deviceInfo.lyrics) {
         socket.emit("lyrics-get", deviceInfo.lyrics);
         lyrics.getLyricsCacheStats(io);
@@ -558,8 +572,57 @@ io.on("connection", (socket) => {
                 pollExternal = external.start(io, deviceInfo, serverSettings);
             }
         }
+        if (msg.features.presence && typeof msg.features.presence === "object") {
+            serverSettings.features.presence = {
+                ...serverSettings.features.presence,
+                ...msg.features.presence
+            };
+        }
+        if (msg.features.volumeKnob && typeof msg.features.volumeKnob === "object") {
+            const vk = msg.features.volumeKnob;
+            serverSettings.features.volumeKnob = {
+                ...serverSettings.features.volumeKnob, ...vk,
+                map: { ...(serverSettings.features.volumeKnob.map || {}), ...(vk.map || {}) }
+            };
+        }
         lib.saveSettings(serverSettings);
         sockets.getServerSettings(io, serverSettings);
+    });
+
+    /**
+     * Presence report from the Pi presence daemon (app-blank mode). Rebroadcast to
+     * clients so the /tv view can blank/unblank. Power-off mode acts on the Pi and
+     * does not use this. (fork)
+     * @param {object} msg - { occupied: boolean }
+     * @returns {undefined}
+     */
+    socket.on("presence-report", (msg) => {
+        log("Socket event", "presence-report", msg);
+        lastPresence = !!(msg && msg.occupied);
+        io.emit("presence", { occupied: lastPresence });
+    });
+
+    /**
+     * Action from the wireless volume knob shim on the Pi. Mapped to WiiM
+     * volume/transport via the LinkPlay HTTP API. Gated by features.volumeKnob. (fork)
+     * @param {object} msg - { action: string, step?: number }
+     * @returns {undefined}
+     */
+    socket.on("knob-action", (msg) => {
+        log("Socket event", "knob-action", msg);
+        const vk = serverSettings.features.volumeKnob;
+        if (!vk || !vk.enabled) { return; }
+        const action = msg && msg.action;
+        const step = (msg && Number(msg.step)) || vk.step || 3;
+        switch (action) {
+            case "vol-up": httpApi.adjustVolume(io, step, serverSettings); break;
+            case "vol-down": httpApi.adjustVolume(io, -step, serverSettings); break;
+            case "mute": httpApi.toggleMute(io, serverSettings); break;
+            case "play-pause": httpApi.callApi(io, "setPlayerCmd:onepause", serverSettings); break;
+            case "next": httpApi.callApi(io, "setPlayerCmd:next", serverSettings); break;
+            case "previous": httpApi.callApi(io, "setPlayerCmd:prev", serverSettings); break;
+            default: log("Unknown knob action:", action);
+        }
     });
 
     /**

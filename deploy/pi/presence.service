@@ -1,0 +1,17 @@
+[Unit]
+Description=WiiM Now Playing presence sensor (LD2410 -> display power)
+After=graphical.target network-online.target
+Wants=network-online.target
+
+[Service]
+# User + XDG_RUNTIME_DIR are rewritten by install.sh for the configured KIOSK_USER,
+# so the daemon can reach the cage/Wayland session for wlr-randr display power.
+User=pi
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+EnvironmentFile=/etc/wnp-kiosk.conf
+ExecStart=/usr/bin/python3 /opt/wnp/presence-daemon.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

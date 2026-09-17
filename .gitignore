@@ -79,6 +79,10 @@ web_modules/
 .env.production.local
 .env.local
 
+# Pi kiosk config with real infra values (only the .example is committed)
+wnp-kiosk.conf
+deploy/pi/wnp-kiosk.conf
+
 # parcel-bundler cache (https://parceljs.org/)
 .cache
 .parcel-cache

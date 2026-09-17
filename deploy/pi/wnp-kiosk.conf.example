@@ -1,0 +1,88 @@
+# WiiM Now Playing — kiosk configuration (placeholders only; never commit real values)
+#
+# Copy this to ONE of:
+#   /boot/firmware/wnp-kiosk.conf   (editable on the FAT boot partition before first boot)
+#   /etc/wnp-kiosk.conf             (on the running Pi)
+# then run deploy/pi/install.sh. The installer copies your file to /etc/wnp-kiosk.conf,
+# which every systemd unit reads via EnvironmentFile= (so the URL/secrets stay out of git).
+#
+# This file is sourced by install.sh (bash), by systemd (EnvironmentFile), and by the
+# Python daemons (os.environ) — so keep it to simple KEY="value" lines and # comments.
+
+# ---------------------------------------------------------------------------
+# Required
+# ---------------------------------------------------------------------------
+
+# The now-playing server's /tv route (the clean full-screen kiosk view).
+WNP_URL="http://CHANGE-ME.local:8099/tv"
+
+# Linux user the kiosk + companion services run as (must exist).
+KIOSK_USER="pi"
+
+# ---------------------------------------------------------------------------
+# Optional features — both OFF by default. Set to 1 to install & enable.
+# The web Settings › Display toggles can still enable/disable them at runtime;
+# these flags only decide whether install.sh sets the services up at all.
+# ---------------------------------------------------------------------------
+
+# Presence sensor (HLK LD2410) → turns the panel off when the room is empty.
+PRESENCE_ENABLED=0
+
+# Wireless HID volume knob → WiiM volume/transport.
+VOLUME_KNOB_ENABLED=0
+
+# ---------------------------------------------------------------------------
+# Presence (only used when PRESENCE_ENABLED=1)
+# ---------------------------------------------------------------------------
+
+# Serial device the LD2410 is wired to (needs enable_uart=1; install.sh sets that).
+PRESENCE_SERIAL="/dev/serial0"
+PRESENCE_BAUD=256000
+
+# Seconds the room must stay empty before the panel powers off (hysteresis).
+PRESENCE_OFF_DELAY_SEC=45
+
+# What "empty" does: "power-off" (wlr-randr / vcgencmd, best for OLED) or
+# "app-blank" (paint the browser black via the app, no HDMI signal loss).
+PRESENCE_MODE="power-off"
+
+# wlr-randr output name for power-off mode (find it with: wlr-randr).
+# Leave blank to auto-detect the first connected output.
+PRESENCE_OUTPUT=""
+
+# Dog / small-target rejection (tune on hardware). Only count a target as a
+# person when it is within this distance band AND its energy clears the floor.
+PRESENCE_ZONE_MIN_CM=50
+PRESENCE_ZONE_MAX_CM=450
+PRESENCE_ENERGY_MIN=40
+
+# ---------------------------------------------------------------------------
+# Volume knob (only used when VOLUME_KNOB_ENABLED=1)
+# ---------------------------------------------------------------------------
+
+# Substring to match the knob's input-device name (blank = any device that
+# reports volume keys). Find names with: python3 -c "import evdev;[print(d.name) for d in map(evdev.InputDevice, evdev.list_devices())]"
+VOLUME_KNOB_MATCH=""
+
+# Volume step per detent (percent).
+VOLUME_KNOB_STEP=3
+
+# ---------------------------------------------------------------------------
+# Maintenance & hardening (applied by install.sh)
+# ---------------------------------------------------------------------------
+
+# Auto security updates via unattended-upgrades (Debian + Raspberry Pi origins,
+# so Chromium is patched too) plus a nightly reboot window.
+AUTO_UPDATES=1
+NIGHTLY_REBOOT="04:00"        # blank to disable the automatic reboot
+
+# SSH hardening: disable password auth. ONLY set to 1 once key-based login works,
+# or you will lock yourself out.
+HARDEN_SSH=0
+
+# Firewall: enable ufw and allow SSH only from ADMIN_CIDR. Requires ADMIN_CIDR.
+HARDEN_UFW=0
+ADMIN_CIDR=""                 # e.g. 192.168.10.0/24
+
+# Reboot automatically at the end of install.sh.
+REBOOT_AFTER_INSTALL=0

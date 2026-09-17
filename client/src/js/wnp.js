@@ -21,6 +21,7 @@ WNP.s = {
         "chkWeatherTemp", "chkWeatherForecast", "chkWeatherLabel", "weatherLocation", "selWeatherUnits", "weatherStatus",
         "selClockLocale", "chkSwipeEnabled", "selSwipeGesture", "selSwipeTransition", "swipeReturnSeconds",
         "wnpNightShift", "chkNightShift", "selNightShiftSchedule", "nightShiftFrom", "nightShiftTo", "nightShiftWarmth", "nightShiftWarmthValue", "nightShiftBrightness", "nightShiftBrightnessValue",
+        "chkPresenceEnabled", "selPresenceMode", "presenceOffDelay", "chkVolumeKnob", "volumeKnobStep",
         "chkExternalEnabled", "selExternalPriority", "selExternalArtwork", "plexUrl", "plexToken", "plexPlayers", "plexUsers", "jellyfinUrl", "jellyfinApiKey", "jellyfinPlayers", "jellyfinUsers", "btnSaveSources",
         "wnpHero", "wnpHeroImg", "wnpHeroImgB", "wnpHeroLogo"],
     // Default timeout for alerts in ms
@@ -58,6 +59,7 @@ WNP.d = {
     progAnchor: null, // Last known playback position anchor for smooth local progress interpolation
     progressTimer: null, // Local progress ticker interval
     populateSourcesOnce: false, // One-shot: repopulate the Sources form on the next server-settings (set on modal open)
+    presenceBlank: false, // Room empty (presence "app-blank" mode) -> blank the screen (fork)
     heroActiveLayer: "a" // Which hero image layer is currently shown (for crossfading backdrop art)
 };
 
@@ -288,6 +290,35 @@ WNP.setUIListeners = function () {
         });
     });
 
+    // Presence sensor + volume knob (kiosk companion features). (fork)
+    ["chkPresenceEnabled", "selPresenceMode", "presenceOffDelay"].forEach(function (id) {
+        if (!WNP.r[id]) { return; }
+        WNP.r[id].addEventListener("change", function () {
+            socket.emit("features-settings", {
+                features: {
+                    presence: {
+                        enabled: WNP.r.chkPresenceEnabled.checked,
+                        mode: WNP.r.selPresenceMode.value,
+                        offDelaySec: parseInt(WNP.r.presenceOffDelay.value, 10) || 45
+                    }
+                }
+            });
+        });
+    });
+    ["chkVolumeKnob", "volumeKnobStep"].forEach(function (id) {
+        if (!WNP.r[id]) { return; }
+        WNP.r[id].addEventListener("change", function () {
+            socket.emit("features-settings", {
+                features: {
+                    volumeKnob: {
+                        enabled: WNP.r.chkVolumeKnob.checked,
+                        step: parseInt(WNP.r.volumeKnobStep.value, 10) || 3
+                    }
+                }
+            });
+        });
+    });
+
     // External sources (Plex / Jellyfin) settings
     if (this.r.btnSaveSources) {
         this.r.btnSaveSources.addEventListener("click", function () {
@@ -479,6 +510,17 @@ WNP.setSocketDefinitions = function () {
             WNP.r.nightShiftBrightnessValue.innerText = WNP.r.nightShiftBrightness.value;
         }
         WNP.applyNightShift();
+        var pres = (msg && msg.features && msg.features.presence) ? msg.features.presence : {};
+        if (WNP.r.chkPresenceEnabled) {
+            WNP.r.chkPresenceEnabled.checked = Boolean(pres.enabled);
+            WNP.r.selPresenceMode.value = pres.mode || "power-off";
+            WNP.r.presenceOffDelay.value = (typeof pres.offDelaySec === "number") ? pres.offDelaySec : 45;
+        }
+        var vk = (msg && msg.features && msg.features.volumeKnob) ? msg.features.volumeKnob : {};
+        if (WNP.r.chkVolumeKnob) {
+            WNP.r.chkVolumeKnob.checked = Boolean(vk.enabled);
+            WNP.r.volumeKnobStep.value = (typeof vk.step === "number") ? vk.step : 3;
+        }
         var wx = (msg && msg.features && msg.features.weather) ? msg.features.weather : {};
         if (WNP.r.chkWeatherTemp) {
             WNP.r.chkWeatherTemp.checked = Boolean(wx.enabled);
@@ -923,6 +965,13 @@ WNP.setSocketDefinitions = function () {
         if (WNP.r.weatherStatus && msg) {
             WNP.r.weatherStatus.innerText = msg.error ? ("Weather: " + msg.error) : ("Weather for " + msg.name + ", updated " + new Date(msg.updated).toLocaleTimeString());
         }
+    });
+
+    // On presence (app-blank mode): blank the screen when the room is empty. The
+    // clock tick() also ORs this flag in, so it survives the 1s refresh. (fork)
+    socket.on("presence", function (msg) {
+        WNP.d.presenceBlank = !(msg && msg.occupied);
+        document.body.classList.toggle("wnp-blank", WNP.d.presenceBlank);
     });
 
     // On device set
@@ -1988,7 +2037,7 @@ WNP.startClock = function () {
         // Plex/Jellyfin video plays (CSS makes the clock background transparent). (fork)
         var clockOverHero = document.body.classList.contains("wnp-art-clock");
         var showClock = idleClock || self.d.manualClock || clockOverHero;
-        var blank = blankMs > 0 && (now - self.d.lastActivityMs) >= blankMs;
+        var blank = (blankMs > 0 && (now - self.d.lastActivityMs) >= blankMs) || self.d.presenceBlank;
         var trans = (cfg.swipe && cfg.swipe.transition) || "fade";
         if (self.r.wnpClock.getAttribute("data-transition") !== trans) { self.r.wnpClock.setAttribute("data-transition", trans); }
 
