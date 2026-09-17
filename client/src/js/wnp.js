@@ -881,28 +881,41 @@ WNP.setSocketDefinitions = function () {
         }
 
         // Clear logo instead of the plain-text title (Settings > Sources > "Show the clear
-        // logo…", default on) when one is available for the album/show/movie. Falls back to
-        // the title text if the logo image fails to load. (fork)
+        // logo…", default on) when one is available for the album/show/movie. In full-screen
+        // backdrop mode the logo is pinned bottom-left via #wnpHeroLogo — a child of the
+        // (never-transformed) #wnpHero, so it anchors to the screen rather than to the
+        // transformed .wnpMediaInfo. Other layouts replace the title inline via
+        // #mediaTitleLogo. Falls back to the title text if the image fails to load. (fork)
         var extCfg = (WNP.d.serverSettings && WNP.d.serverSettings.features && WNP.d.serverSettings.features.external) || {};
-        var showTitleLogo = (extCfg.clearLogo !== false) && Boolean(heroLogo);
-        if (WNP.r.mediaTitleLogo) {
-            if (showTitleLogo) {
-                if (WNP.r.mediaTitleLogo.getAttribute("src") !== heroLogo) {
-                    WNP.r.mediaTitleLogo.onerror = function () { // no logo at that URL -> revert to the title text
-                        this.classList.add("d-none");
-                        this.removeAttribute("src");
-                        WNP.r.mediaTitle.classList.remove("d-none");
-                    };
-                    WNP.r.mediaTitleLogo.src = heroLogo;
-                    if (trackChanged) { WNP.playEnter(WNP.r.mediaTitleLogo); }
-                }
-                WNP.r.mediaTitleLogo.classList.remove("d-none");
-                WNP.r.mediaTitle.classList.add("d-none");
+        var wantLogo = (extCfg.clearLogo !== false) && Boolean(heroLogo);
+        var heroLogoMode = wantLogo && Boolean(heroOn) && artMode === "backdrop";
+        var setLogoImg = function (imgEl) {
+            if (imgEl.getAttribute("src") !== heroLogo) {
+                imgEl.onload = function () { imgEl.classList.remove("d-none"); WNP.r.mediaTitle.classList.add("d-none"); };
+                imgEl.onerror = function () { // no logo at that URL -> revert to the title text
+                    imgEl.classList.add("d-none"); imgEl.removeAttribute("src");
+                    WNP.r.mediaTitle.classList.remove("d-none");
+                };
+                imgEl.src = heroLogo;
+                if (trackChanged) { WNP.playEnter(imgEl); }
             } else {
-                WNP.r.mediaTitleLogo.classList.add("d-none");
-                WNP.r.mediaTitleLogo.removeAttribute("src");
-                WNP.r.mediaTitle.classList.remove("d-none");
+                imgEl.classList.remove("d-none");
+                WNP.r.mediaTitle.classList.add("d-none");
             }
+        };
+        var hideLogoImg = function (imgEl) {
+            if (imgEl) { imgEl.classList.add("d-none"); imgEl.removeAttribute("src"); imgEl.onload = null; imgEl.onerror = null; }
+        };
+        if (heroLogoMode) {
+            if (WNP.r.wnpHeroLogo) { setLogoImg(WNP.r.wnpHeroLogo); }
+            hideLogoImg(WNP.r.mediaTitleLogo);
+        } else if (wantLogo) {
+            if (WNP.r.mediaTitleLogo) { setLogoImg(WNP.r.mediaTitleLogo); }
+            hideLogoImg(WNP.r.wnpHeroLogo);
+        } else {
+            hideLogoImg(WNP.r.wnpHeroLogo);
+            hideLogoImg(WNP.r.mediaTitleLogo);
+            WNP.r.mediaTitle.classList.remove("d-none");
         }
 
         // Hide the director/genre + release year for external video unless the user opts in
