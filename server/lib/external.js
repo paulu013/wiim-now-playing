@@ -23,6 +23,7 @@ const DEFAULTS = {
     pollMs: 2000,
     artwork: "backdrop", // "backdrop" (full-screen hero + logo) | "poster" | "still"
     clearLogo: true, // Show the clear logo (Plex clearLogo / Jellyfin Logo) instead of the plain-text title when available
+    showDetails: false, // Show the director/genre + release year for video (music always shows artist/album)
     plex: { url: "", token: "", players: [], users: [] },
     jellyfin: { url: "", apiKey: "", players: [], users: [] }
 };

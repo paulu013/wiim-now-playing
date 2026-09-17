@@ -22,7 +22,7 @@ WNP.s = {
         "selClockLocale", "chkSwipeEnabled", "selSwipeGesture", "selSwipeTransition", "swipeReturnSeconds",
         "wnpNightShift", "chkNightShift", "selNightShiftSchedule", "nightShiftFrom", "nightShiftTo", "nightShiftWarmth", "nightShiftWarmthValue", "nightShiftBrightness", "nightShiftBrightnessValue",
         "chkPresenceEnabled", "selPresenceMode", "presenceOffDelay", "chkVolumeKnob", "volumeKnobStep",
-        "chkExternalEnabled", "selExternalPriority", "selExternalArtwork", "plexUrl", "plexToken", "plexPlayers", "plexUsers", "jellyfinUrl", "jellyfinApiKey", "jellyfinPlayers", "jellyfinUsers", "chkClearLogo", "btnSaveSources",
+        "chkExternalEnabled", "selExternalPriority", "selExternalArtwork", "plexUrl", "plexToken", "plexPlayers", "plexUsers", "jellyfinUrl", "jellyfinApiKey", "jellyfinPlayers", "jellyfinUsers", "chkClearLogo", "chkShowDetails", "btnSaveSources",
         "wnpHero", "wnpHeroImg", "wnpHeroImgB", "wnpHeroLogo"],
     // Default timeout for alerts in ms
     alertTimeoutMs: 5000
@@ -329,6 +329,7 @@ WNP.setUIListeners = function () {
                         priority: WNP.r.selExternalPriority.value,
                         artwork: WNP.r.selExternalArtwork.value,
                         clearLogo: WNP.r.chkClearLogo ? WNP.r.chkClearLogo.checked : true,
+                        showDetails: WNP.r.chkShowDetails ? WNP.r.chkShowDetails.checked : false,
                         plex: { url: WNP.r.plexUrl.value.trim(), token: WNP.r.plexToken.value.trim(), players: WNP.r.plexPlayers.value, users: WNP.r.plexUsers.value },
                         jellyfin: { url: WNP.r.jellyfinUrl.value.trim(), apiKey: WNP.r.jellyfinApiKey.value.trim(), players: WNP.r.jellyfinPlayers.value, users: WNP.r.jellyfinUsers.value }
                     }
@@ -547,6 +548,7 @@ WNP.setSocketDefinitions = function () {
             WNP.r.selExternalPriority.value = ext.priority || "wiim";
             if (WNP.r.selExternalArtwork) { WNP.r.selExternalArtwork.value = ext.artwork || "backdrop"; }
             if (WNP.r.chkClearLogo) { WNP.r.chkClearLogo.checked = ext.clearLogo !== false; } // default on
+            if (WNP.r.chkShowDetails) { WNP.r.chkShowDetails.checked = ext.showDetails === true; } // default off
             WNP.r.plexUrl.value = (ext.plex && ext.plex.url) || "";
             WNP.r.plexToken.value = (ext.plex && ext.plex.token) || "";
             WNP.r.plexPlayers.value = (ext.plex && ext.plex.players) ? [].concat(ext.plex.players).join(", ") : "";
@@ -902,6 +904,12 @@ WNP.setSocketDefinitions = function () {
                 WNP.r.mediaTitle.classList.remove("d-none");
             }
         }
+
+        // Hide the director/genre + release year for external video unless the user opts in
+        // (Settings > Sources > "Show director & year"). Music keeps its artist/album. (fork)
+        var wnpKind = (msg.trackMetaData && msg.trackMetaData["wnp:kind"]) || "";
+        var isVideo = wnpKind === "movie" || wnpKind === "episode" || wnpKind === "clip";
+        document.body.classList.toggle("wnp-hide-details", isVideo && extCfg.showDetails !== true);
 
         // Device volume
         WNP.r.devVol.innerText = (msg.CurrentVolume) ? msg.CurrentVolume : "-"; // Set the volume on the UI
