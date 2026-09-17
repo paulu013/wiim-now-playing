@@ -1321,14 +1321,14 @@ body.wnp-art-poster {
         line-height: 1.03;
     }
 
-    // Clear logo pinned to the bottom-left with a little padding, scaled to at most
-    // 2/3 of the screen width and 1/3 of the height (an <img> preserves aspect ratio
-    // within both maxes, so no distortion).
+    // Clear logo pinned to the bottom-left with a little padding. Capped so its right
+    // edge stays within the left half of the screen (3vw + 47vw = 50vw) and its height
+    // stays under 1/3 of the screen (an <img> preserves aspect ratio within both maxes).
     #mediaTitleLogo {
         position: fixed;
         left: 3vw;
         bottom: 3vh;
-        max-width: 66vw;
+        max-width: 47vw;
         max-height: 33vh;
         margin: 0;
         object-fit: contain;
