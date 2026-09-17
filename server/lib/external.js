@@ -24,6 +24,8 @@ const DEFAULTS = {
     artwork: "backdrop", // "backdrop" (full-screen hero + logo) | "poster" | "still"
     clearLogo: true, // Show the clear logo (Plex clearLogo / Jellyfin Logo) instead of the plain-text title when available
     showDetails: false, // Show the director/genre + release year for video (music always shows artist/album)
+    showProgress: true, // Show the progress bar + playback footer in the artwork view (off => hidden, logo drops lower)
+    showSourceLogo: true, // Show the Plex/Jellyfin source logo in the artwork view
     plex: { url: "", token: "", players: [], users: [] },
     jellyfin: { url: "", apiKey: "", players: [], users: [] }
 };
