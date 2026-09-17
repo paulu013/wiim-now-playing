@@ -23,7 +23,8 @@ WNP.s = {
         "wnpNightShift", "chkNightShift", "selNightShiftSchedule", "nightShiftFrom", "nightShiftTo", "nightShiftWarmth", "nightShiftWarmthValue", "nightShiftBrightness", "nightShiftBrightnessValue",
         "chkPresenceEnabled", "selPresenceMode", "presenceOffDelay", "chkVolumeKnob", "volumeKnobStep",
         "chkExternalEnabled", "selExternalPriority", "selExternalArtwork", "plexUrl", "plexToken", "plexPlayers", "plexUsers", "jellyfinUrl", "jellyfinApiKey", "jellyfinPlayers", "jellyfinUsers", "chkClearLogo", "chkShowDetails", "chkShowProgress", "chkShowSourceLogo", "btnSaveSources",
-        "wnpHero", "wnpHeroImg", "wnpHeroImgB", "wnpHeroLogo"],
+        "wnpHero", "wnpHeroImg", "wnpHeroImgB", "wnpHeroLogo",
+        "devLayoutControls", "devLayoutValues", "btnDevLayoutReset"],
     // Default timeout for alerts in ms
     alertTimeoutMs: 5000
 };
@@ -90,6 +91,12 @@ WNP.Init = function () {
 
     // Set UI event listeners
     this.setUIListeners();
+
+    // Layout (dev) tuning: apply saved overrides + build the sliders. (fork)
+    this.devLayout.init();
+    if (this.r.btnDevLayoutReset) {
+        this.r.btnDevLayoutReset.addEventListener("click", function () { WNP.devLayout.reset(); });
+    }
 
     // Restore the last-known clock config so the correct theme/locale render on the
     // very first frame, before server-settings arrives (avoids a default-theme /
@@ -943,11 +950,11 @@ WNP.setSocketDefinitions = function () {
                 // Sit just above the footer; measure it so the logo clears both the short /tv
                 // footer and the taller normal-view footer. Footer hidden -> drop lower. (fork)
                 if (extCfg.showProgress === false) {
-                    WNP.r.wnpHeroLogo.style.bottom = "3vh";
+                    WNP.r.wnpHeroLogo.style.setProperty("--art-logo-bottom-auto", "3vh");
                 } else {
                     var ft = document.querySelector(".wnpFooter");
                     var fh = (ft && ft.offsetParent !== null) ? ft.offsetHeight : 0;
-                    WNP.r.wnpHeroLogo.style.bottom = (fh + 24) + "px";
+                    WNP.r.wnpHeroLogo.style.setProperty("--art-logo-bottom-auto", (fh + 24) + "px");
                 }
             }
             hideLogoImg(WNP.r.mediaTitleLogo);
@@ -1341,6 +1348,85 @@ WNP.playEnter = function (el) {
     el.classList.remove("wnp-enter");
     void el.offsetWidth; // force reflow so the animation restarts
     el.classList.add("wnp-enter");
+};
+
+// ------------------------------------------------------------------
+// Layout (dev): live position/size tuning for the artwork + alarm-clock elements.
+// Overrides are stored in localStorage (this browser only) and surfaced as a copy box
+// so the values can be baked in as defaults. CSS-var props apply on :root; JS props
+// (e.g. the alarm dial text Y) are read by the renderers via WNP.devLayout.get(). (fork)
+WNP.devLayout = {
+    KEY: "wnpDevLayout",
+    overrides: {},
+    // key: stored id; css: CSS variable to drive (omit for JS-consumed props); def: default shown.
+    props: [
+        { group: "Artwork – clear logo", key: "artLogoLeft", label: "Left", css: "--art-logo-left", min: 0, max: 40, step: 0.5, unit: "vw", def: 3 },
+        { group: "Artwork – clear logo", key: "artLogoBottom", label: "Bottom", css: "--art-logo-bottom", min: 0, max: 400, step: 2, unit: "px", def: null },
+        { group: "Artwork – clear logo", key: "artLogoMaxW", label: "Max width", css: "--art-logo-maxw", min: 10, max: 90, step: 1, unit: "vw", def: 47 },
+        { group: "Artwork – clear logo", key: "artLogoMaxH", label: "Max height", css: "--art-logo-maxh", min: 10, max: 60, step: 1, unit: "vh", def: 33 },
+        { group: "Artwork – source logo", key: "artSrcRight", label: "Right", css: "--art-source-right", min: 0, max: 40, step: 0.5, unit: "vw", def: 3 },
+        { group: "Artwork – source logo", key: "artSrcBottom", label: "Bottom", css: "--art-source-bottom", min: 0, max: 40, step: 0.5, unit: "vh", def: 3 },
+        { group: "Artwork – source logo", key: "artSrcMaxH", label: "Max height", css: "--art-source-maxh", min: 2, max: 20, step: 0.5, unit: "vh", def: 5 },
+        { group: "Alarm clock dial", key: "brandY", label: "Brand text Y", min: 0, max: 200, step: 1, unit: "", def: 58 },
+        { group: "Alarm clock dial", key: "subY", label: "Sub text Y", min: 0, max: 200, step: 1, unit: "", def: 140 }
+    ],
+    load: function () {
+        try { this.overrides = JSON.parse(localStorage.getItem(this.KEY) || "{}") || {}; }
+        catch (e) { this.overrides = {}; }
+    },
+    save: function () { try { localStorage.setItem(this.KEY, JSON.stringify(this.overrides)); } catch (e) { } },
+    get: function (key, fallback) { return (this.overrides[key] != null) ? this.overrides[key] : fallback; },
+    applyCssVars: function () {
+        var root = document.documentElement, self = this;
+        this.props.forEach(function (p) {
+            if (!p.css) { return; }
+            var v = self.overrides[p.key];
+            if (v != null) { root.style.setProperty(p.css, v + (p.unit || "")); }
+            else { root.style.removeProperty(p.css); }
+        });
+    },
+    refreshClock: function () { if (WNP.applyClockTheme) { WNP.d.appliedTheme = null; WNP.applyClockTheme(); } },
+    buildUI: function () {
+        var self = this;
+        if (!WNP.r.devLayoutControls) { return; }
+        var groups = {}, order = [];
+        this.props.forEach(function (p) { if (!groups[p.group]) { groups[p.group] = []; order.push(p.group); } groups[p.group].push(p); });
+        var html = "";
+        order.forEach(function (g) {
+            html += '<div class="mb-3"><div class="fw-bold small mb-1">' + g + '</div>';
+            groups[g].forEach(function (p) {
+                var ov = self.overrides[p.key];
+                var pos = (ov != null) ? ov : (p.def != null ? p.def : (p.min + p.max) / 2);
+                var txt = (ov != null) ? (ov + (p.unit || "")) : "(auto)";
+                html += '<div class="d-flex align-items-center gap-2 mb-1">'
+                    + '<label class="form-label small mb-0" style="width:8rem" for="dl_' + p.key + '">' + p.label + '</label>'
+                    + '<input type="range" class="form-range flex-grow-1" id="dl_' + p.key + '" min="' + p.min + '" max="' + p.max + '" step="' + p.step + '" value="' + pos + '">'
+                    + '<span class="small text-muted text-end" style="width:5rem" id="dlv_' + p.key + '">' + txt + '</span>'
+                    + '</div>';
+            });
+            html += '</div>';
+        });
+        WNP.r.devLayoutControls.innerHTML = html;
+        this.props.forEach(function (p) {
+            var el = document.getElementById("dl_" + p.key);
+            if (!el) { return; }
+            el.addEventListener("input", function () {
+                self.overrides[p.key] = Number(this.value);
+                var rd = document.getElementById("dlv_" + p.key);
+                if (rd) { rd.textContent = this.value + (p.unit || ""); }
+                self.applyCssVars(); self.refreshClock(); self.save(); self.updateValues();
+            });
+        });
+        this.updateValues();
+    },
+    updateValues: function () {
+        if (!WNP.r.devLayoutValues) { return; }
+        var self = this, out = {};
+        this.props.forEach(function (p) { if (self.overrides[p.key] != null) { out[p.key] = self.overrides[p.key] + (p.unit || ""); } });
+        WNP.r.devLayoutValues.value = Object.keys(out).length ? JSON.stringify(out, null, 2) : "(no overrides — all defaults)";
+    },
+    reset: function () { this.overrides = {}; this.save(); this.applyCssVars(); this.refreshClock(); this.buildUI(); },
+    init: function () { this.load(); this.applyCssVars(); this.buildUI(); }
 };
 
 /** Tick the progress bar locally so it moves smoothly between polls. */
@@ -1897,13 +1983,14 @@ WNP.applyClockTheme = function () {
     // nodes, and /tv omits them — a missing ref must never abort the tick)
     var brand = (cfg.dialText && cfg.dialText.brand) || "";
     var sub = (cfg.dialText && cfg.dialText.sub) || "";
+    var dl = WNP.devLayout; // live dev-tuning overrides for the alarm-clock dial text
     if (this.r.dialBrand) {
         this.r.dialBrand.textContent = theme.dial ? brand : "";
-        this.r.dialBrand.setAttribute("y", theme.brandY || 62);
+        this.r.dialBrand.setAttribute("y", dl ? dl.get("brandY", theme.brandY || 62) : (theme.brandY || 62));
     }
     if (this.r.dialSub) {
         this.r.dialSub.textContent = theme.dial ? sub : "";
-        this.r.dialSub.setAttribute("y", theme.subY || 140);
+        this.r.dialSub.setAttribute("y", dl ? dl.get("subY", theme.subY || 140) : (theme.subY || 140));
     }
 
     // Analog dial: ticks and numerals
