@@ -146,15 +146,39 @@ lib.getSettings(serverSettings);
 // WIIM_LOCATION lets you point the server straight at the device descriptor URL
 // (e.g. http://192.168.30.20:49152/description.xml) and skip discovery entirely.
 // Everything after this (descriptor, AVTransport polling, LinkPlay) is unicast HTTP. (fork)
+// Accept a bare IP/host, host:port, or a full URL for WIIM_LOCATION and normalise it
+// to the descriptor URL the UPnP client needs (scheme http, port 49152, path
+// /description.xml). Returns null if it can't be parsed at all. (fork)
+const normalizeWiimLocation = (raw) => {
+    let s = String(raw || "").trim();
+    if (!s) { return null; }
+    if (!/^https?:\/\//i.test(s)) { s = "http://" + s; } // bare IP/host -> add scheme
+    let u;
+    try { u = new URL(s); } catch (e) { return null; }
+    if (!u.port) { u.port = "49152"; } // WiiM UPnP descriptor port
+    if (!u.pathname || u.pathname === "/") { u.pathname = "/description.xml"; }
+    return u.toString();
+};
+
 if (process.env.WIIM_LOCATION) {
-    log("WIIM_LOCATION set, selecting device directly (no SSDP):", process.env.WIIM_LOCATION);
-    upnp.getDeviceDescription(deviceList, serverSettings, { LOCATION: process.env.WIIM_LOCATION });
-    // Re-seed periodically so a rebooted/late device still gets picked up (until one is selected).
-    setInterval(() => {
-        if (!serverSettings.selectedDevice || !serverSettings.selectedDevice.location) {
-            upnp.getDeviceDescription(deviceList, serverSettings, { LOCATION: process.env.WIIM_LOCATION });
+    const wiimLocation = normalizeWiimLocation(process.env.WIIM_LOCATION);
+    if (!wiimLocation) {
+        log("WIIM_LOCATION is set but not a valid IP/host/URL, falling back to SSDP:", process.env.WIIM_LOCATION);
+        ssdp.scan(deviceList, serverSettings);
+    }
+    else {
+        if (wiimLocation !== process.env.WIIM_LOCATION) {
+            log("WIIM_LOCATION normalised:", process.env.WIIM_LOCATION, "->", wiimLocation);
         }
-    }, 30000);
+        log("WIIM_LOCATION set, selecting device directly (no SSDP):", wiimLocation);
+        upnp.getDeviceDescription(deviceList, serverSettings, { LOCATION: wiimLocation });
+        // Re-seed periodically so a rebooted/late device still gets picked up (until one is selected).
+        setInterval(() => {
+            if (!serverSettings.selectedDevice || !serverSettings.selectedDevice.location) {
+                upnp.getDeviceDescription(deviceList, serverSettings, { LOCATION: wiimLocation });
+            }
+        }, 30000);
+    }
 }
 else {
     // Initial SSDP scan for devices.

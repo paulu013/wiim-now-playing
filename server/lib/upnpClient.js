@@ -332,7 +332,15 @@ const callDeviceAction = (io, action, deviceInfo, serverSettings) => {
 const getDeviceDescription = (deviceList, serverSettings, respSSDP) => {
     // log("getDeviceDescription()");
 
-    const deviceClient = createClient(respSSDP.LOCATION);
+    // createClient parses LOCATION as a URL synchronously; guard so a malformed
+    // value logs an error instead of taking down the whole process. (fork)
+    let deviceClient;
+    try {
+        deviceClient = createClient(respSSDP.LOCATION);
+    } catch (e) {
+        log("getDeviceDescription()", "Invalid device LOCATION, skipping:", respSSDP.LOCATION, e.message);
+        return;
+    }
     deviceClient.getDeviceDescription(function (err, deviceDesc) {
         if (err) { log("getDeviceDescription()", "Error", err); }
         else {
