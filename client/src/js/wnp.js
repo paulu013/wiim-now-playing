@@ -590,6 +590,20 @@ WNP.setSocketDefinitions = function () {
                         badge.remove();
                     }
                 };
+                // A <select> can't show a placeholder, so append the suffix to the selected
+                // option text: e.g. "the Plex/Jellyfin session - set via the environment". (fork)
+                var SUFFIX = " - set via the environment";
+                var setSelectSuffix = function (on) {
+                    if (el.tagName !== "SELECT") { return; }
+                    for (var i = 0; i < el.options.length; i++) {
+                        var o = el.options[i];
+                        if (o.dataset.origText != null) { o.textContent = o.dataset.origText; delete o.dataset.origText; }
+                    }
+                    if (on) {
+                        var sel = el.options[el.selectedIndex];
+                        if (sel) { sel.dataset.origText = sel.textContent; sel.textContent = sel.textContent + SUFFIX; }
+                    }
+                };
                 if (lock && lock.locked) {
                     el.disabled = true;
                     el.classList.add("wnp-env-locked");
@@ -597,11 +611,13 @@ WNP.setSocketDefinitions = function () {
                     if (lock.secret) { el.value = ""; el.placeholder = "🔒 set via environment"; }
                     else if (lock.value != null && lock.value !== "") { el.value = [].concat(lock.value).join(", "); }
                     setBadge(true);
+                    setSelectSuffix(true);
                 } else {
                     el.disabled = false;
                     el.classList.remove("wnp-env-locked");
                     el.removeAttribute("title");
                     setBadge(false);
+                    setSelectSuffix(false);
                 }
             };
             applyLock(WNP.r.selExternalPriority, envLk.priority);
