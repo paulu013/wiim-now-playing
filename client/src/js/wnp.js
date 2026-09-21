@@ -574,16 +574,34 @@ WNP.setSocketDefinitions = function () {
             var envLk = (msg && msg.envLocks && msg.envLocks.external) || {};
             var applyLock = function (el, lock) {
                 if (!el) { return; }
+                // Show a 🔒 badge on the field's label so locked selects/inputs read as
+                // "managed by env", not broken — matching the secret placeholder. (fork)
+                var lbl = el.id ? document.querySelector('label[for="' + el.id + '"]') : null;
+                var setBadge = function (on) {
+                    if (!lbl) { return; }
+                    var badge = lbl.querySelector(".wnp-lock-badge");
+                    if (on && !badge) {
+                        badge = document.createElement("span");
+                        badge.className = "wnp-lock-badge";
+                        badge.title = "Set via environment variable — edit .env and redeploy to change";
+                        badge.textContent = " 🔒";
+                        lbl.appendChild(badge);
+                    } else if (!on && badge) {
+                        badge.remove();
+                    }
+                };
                 if (lock && lock.locked) {
                     el.disabled = true;
                     el.classList.add("wnp-env-locked");
                     el.title = "Set via environment variable — edit .env and redeploy to change";
                     if (lock.secret) { el.value = ""; el.placeholder = "🔒 set via environment"; }
                     else if (lock.value != null && lock.value !== "") { el.value = [].concat(lock.value).join(", "); }
+                    setBadge(true);
                 } else {
                     el.disabled = false;
                     el.classList.remove("wnp-env-locked");
                     el.removeAttribute("title");
+                    setBadge(false);
                 }
             };
             applyLock(WNP.r.selExternalPriority, envLk.priority);

@@ -1298,6 +1298,13 @@ body.wnp-hide-progress.wnp-art-poster #mediaSource {
     cursor: not-allowed;
 }
 
+/* Lock badge appended to a locked field's label (see applyLock). */
+.wnp-lock-badge {
+    opacity: .7;
+    font-size: .9em;
+    cursor: help;
+}
+
 /* Clear logo shown in place of the plain-text title when one is available
  * (Settings > Sources > "Show the clear logo…"). inline-block so it follows the
  * container's text-align (centred in the normal view, left in poster/backdrop). */
